@@ -1,0 +1,8 @@
+PROMPT 1 - CÀI VPS LẦN ĐẦU
+
+Hãy cài Javis OS production từ A đến Z trên VPS này bằng Docker, dùng fork quoctran-2608/javis-os. Tự kiểm tra và cài Docker/Docker Compose nếu thiếu, dùng tag stable mới nhất của ghcr.io/quoctran-2608/javis-os và pin đúng version, cấu hình compose/.env + persistent volumes an toàn, rồi đưa Javis chạy HTTPS tại javis.agrinomicsvn.online. Không build/sửa source trực tiếp trên VPS, không dùng docker compose down -v, không làm mất credential Claude Code/Codex/Antigravity. Sau khi cài xong phải health-check và báo rõ version đang chạy. Chỉ hỏi tôi khi thật sự cần thao tác thủ công như DNS hoặc đăng nhập OAuth.
+
+
+PROMPT 2 - CẬP NHẬT TỪ UPSTREAM CÁC LẦN SAU
+
+Hãy cập nhật fork production quoctran-2608/javis-os từ upstream blogminhquy/javis-os theo đúng Skill javis-upstream-update. Thực hiện từ repo development, không sửa source trực tiếp trên VPS. Không được bỏ qua bất kỳ cổng an toàn nào của Skill. Nếu Git bẩn, conflict chưa giải quyết hoặc test/CI lỗi thì DỪNG. Chuẩn bị release và Docker image hoàn chỉnh; chỉ deploy VPS sau khi tôi xác nhận rõ.
