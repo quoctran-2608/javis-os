@@ -148,6 +148,8 @@ _p = _sp.run([sys.executable, _upd, "--dry-run", "--port", "7777", "--server-pid
              capture_output=True, text=True, env={**os.environ})
 check("updater --dry-run (kèm --server-pid) thoát 0", _p.returncode == 0)
 check("updater --dry-run in PLAN", "PLAN:" in (_p.stdout or ""))
+check("updater yêu cầu cây Git sạch trước khi dừng server",
+      "require-clean -> stop" in (_p.stdout or ""))
 
 # --- updater: 3 chế độ restart (bug thật: Mac không có systemd bị chặn cứng không update được) ---
 import updater as _updmod  # noqa: E402
@@ -157,10 +159,23 @@ check("service_mode: Mac/không systemd -> nohup (KHÔNG bail lỗi)",
       _updmod.service_mode("posix", systemd=False) == "nohup")
 check("updater không còn nhánh chặn 'Không có systemd service'",
       "Không có systemd service" not in open(_upd, encoding="utf-8").read())
+_upd_src = open(_upd, encoding="utf-8").read()
+check("updater kiểm cả file untracked", "--untracked-files=normal" in _upd_src)
+check("updater không tự git stash custom source", 'run(["git", "stash"])' not in _upd_src)
+check("updater kiểm cây bẩn trước khi dừng server",
+      _upd_src.find("if git_dirty():") < _upd_src.find('log("Dừng server cũ…")'))
+_update_sh = (ROOT / "update.sh").read_text(encoding="utf-8")
+check("update.sh cũng kiểm cả file untracked trước pull",
+      "git status --porcelain --untracked-files=normal" in _update_sh)
+check("update.sh không tự stash custom source", "git stash" not in _update_sh)
 
 # --- /version báo platform để UI ghi đúng nhãn (Mac từng bị dán 'Linux (systemd)') ---
 _v2 = asyncio.run(main.version_info())
 check("/version có khoá platform", _v2.get("platform") in ("windows", "mac", "linux"))
+check("/version công bố đúng fork cập nhật",
+      _v2.get("update_repo") == "quoctran-2608/javis-os")
+check("/version công bố image fork",
+      _v2.get("image_repo") == "ghcr.io/quoctran-2608/javis-os")
 _console_src = (main.DASHBOARD_PATH / "console.js").read_text(encoding="utf-8")
 check("console.js hết hardcode nhãn 'Linux (systemd)'", "Linux (systemd)" not in _console_src)
 check("console.js có nhãn macOS theo platform", "macOS" in _console_src)

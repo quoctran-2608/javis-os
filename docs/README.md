@@ -49,6 +49,7 @@ Thanh điều hướng của dashboard gom **17 trang** thành **6 nhóm**: Tr�
 
 ### Khi có sự cố
 - [17 - Khắc phục sự cố & FAQ](17-khac-phuc-su-co.md) - lỗi thường gặp và cách xử lý.
+- [27 - Vận hành fork & cập nhật upstream](27-van-hanh-fork.md) - giữ Claude/Codex/Antigravity khi nhận source mới và deploy VPS.
 
 ---
 

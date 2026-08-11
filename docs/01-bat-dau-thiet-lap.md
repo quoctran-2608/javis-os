@@ -189,14 +189,14 @@ Bấm **⬆ Cập nhật ngay**, Javis hỏi xác nhận ("Cập nhật Javis l�
 
 **Chuẩn bị → Tải code → Cài thư viện → Khởi động lại → Kiểm tra sức khoẻ → Xong**
 
-Bước đang chạy có dấu ⏳, bước đã qua có ✅. Trong lúc chạy, dòng trạng thái ghi "⏳ Đang cập nhật… đừng tắt trang." Nếu mã nguồn trên máy có sửa đổi cục bộ, Javis báo "📦 Sửa đổi cục bộ đã được cất vào git stash." (cất đi chứ không xoá). Xong xuôi thì hiện "✅ Đã cập nhật xong. Đang tải lại trang…" và app tự tải lại sau khoảng 1,5 giây.
+Bước đang chạy có dấu ⏳, bước đã qua có ✅. Trong lúc chạy, dòng trạng thái ghi "⏳ Đang cập nhật… đừng tắt trang." Nếu mã nguồn trên máy có sửa đổi hoặc file mới chưa commit, Javis **dừng trước khi tắt server** và yêu cầu commit/push hoặc tự cất thay đổi. Javis không tự stash vì một provider có thể gồm cả file mới; cất nửa bộ sẽ làm bản cập nhật chạy nửa cũ nửa mới. Xong xuôi thì hiện "✅ Đã cập nhật xong. Đang tải lại trang…" và app tự tải lại sau khoảng 1,5 giây.
 
 ### Khi bản mới hỏng: lùi bản
 
 Javis có sẵn đường lùi, không bỏ bạn kẹt ở bản lỗi:
 
 - **Tự lùi:** nếu bản mới không qua được bước Kiểm tra sức khoẻ, Javis tự quay về bản cũ. Thanh tiến trình hiện "↩ Bản mới lỗi, đang tự quay về bản cũ…", xong thì báo "↩ Bản mới lỗi, đã **tự quay về bản cũ**."
-- **Lùi tay trên Docker:** nếu sau một lúc phiên bản vẫn chưa đổi, Javis báo "⚠ Bản mới chưa lên sau một lúc - có thể lỗi." rồi hiện khối **Cách lùi bản Docker** với lệnh `docker compose pull && docker compose up -d`, kèm gợi ý pin image `ghcr.io/blogminhquy/javis-os:<phiên-bản-cũ>` rồi Redeploy.
+- **Lùi tay trên Docker:** nếu sau một lúc phiên bản vẫn chưa đổi, Javis báo "⚠ Bản mới chưa lên sau một lúc - có thể lỗi." rồi hiện khối **Cách lùi bản Docker** với lệnh `docker compose pull && docker compose up -d`, kèm gợi ý pin image `ghcr.io/quoctran-2608/javis-os:<phiên-bản-cũ>` rồi Redeploy.
 - **Lỗi khác:** khung báo lỗi cụ thể và nhắc xem file `update.log`. Nếu server không lên lại sau khoảng 3 phút, khung ghi "Server chưa lên lại sau khoảng 3 phút - thử tải lại trang."
 
 Bên dưới khung cập nhật là nhật ký phiên bản: từng bản có gì mới, chia trang, bản đang cài được đánh dấu.

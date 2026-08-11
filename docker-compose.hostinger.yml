@@ -7,7 +7,7 @@
 #
 # CÁCH DÙNG:
 #   1) Docker Manager > Compose > URL > dán:
-#      https://raw.githubusercontent.com/blogminhquy/javis-os/main/docker-compose.hostinger.yml
+#      https://raw.githubusercontent.com/quoctran-2608/javis-os/main/docker-compose.hostinger.yml
 #   2) Ô Environment chỉ còn 3 trường hữu ích:
 #        DOMAIN_NAME, JAVIS_ADMIN_USER, JAVIS_ADMIN_PASSWORD.
 #      Đặt DOMAIN_NAME để có HTTPS:
@@ -27,7 +27,7 @@
 # ============================================================================
 services:
   javis:
-    image: ghcr.io/blogminhquy/javis-os:latest
+    image: ghcr.io/quoctran-2608/javis-os:latest
     container_name: javis
     restart: unless-stopped
     pull_policy: always
@@ -44,10 +44,10 @@ services:
       - "7777:7777"                 # đường vào dự phòng (nút Open / http://<ip>:7777)
     labels:
       # Guide (Documentation / Quick start) trong Docker Manager - trỏ docs GitHub.
-      - org.opencontainers.image.documentation=https://github.com/blogminhquy/javis-os/blob/main/docs/README.md
-      - org.opencontainers.image.source=https://github.com/blogminhquy/javis-os
-      - com.hostinger.documentation=https://github.com/blogminhquy/javis-os/blob/main/docs/README.md
-      - com.hostinger.quickstart=https://github.com/blogminhquy/javis-os/blob/main/QUICKSTART.md
+      - org.opencontainers.image.documentation=https://github.com/quoctran-2608/javis-os/blob/main/docs/README.md
+      - org.opencontainers.image.source=https://github.com/quoctran-2608/javis-os
+      - com.hostinger.documentation=https://github.com/quoctran-2608/javis-os/blob/main/docs/README.md
+      - com.hostinger.quickstart=https://github.com/quoctran-2608/javis-os/blob/main/QUICKSTART.md
       # Router/service dùng tên cố định vì container này cũng cố định là "javis".
       # Host = ${DOMAIN_NAME}; chưa đặt thì mặc định "localhost" (deploy vẫn chạy, chỉ chưa có domain/HTTPS).
       - traefik.enable=true

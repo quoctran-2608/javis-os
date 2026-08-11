@@ -4,7 +4,7 @@ Server spawn DETACHED:
 
     python updater.py --old-sha <sha> --old-version <v> --target <v> --port <p> --server-pid <pid>
 
-Chuỗi: stop server -> git pull (stash nếu cây bẩn) -> pip install -> start -> chờ /health ~90s.
+Chuỗi: kiểm cây sạch -> stop server -> git pull -> pip install -> start -> chờ /health ~90s.
 /health không lên → git reset --hard <old-sha> -> pip -> start (rollback tự động).
 3 chế độ restart (service_mode): windows (bat/vbs), systemd (systemctl), nohup (Mac hoặc
 Linux không systemd: kill PID server cũ rồi tự chạy lại uvicorn nền như install.sh).
@@ -135,7 +135,12 @@ def start_server(mode, port=""):
 
 
 def git_dirty():
-    r = run(["git", "status", "--porcelain", "--untracked-files=no"])
+    """True nếu có file tracked hoặc untracked chưa commit.
+
+    Không tự stash: provider có thể gồm cả file mới. Cất riêng tracked rồi bỏ
+    untracked tại chỗ từng làm bản update chạy nửa cũ nửa mới.
+    """
+    r = run(["git", "status", "--porcelain", "--untracked-files=normal"])
     return bool((r.stdout or "").strip())
 
 
@@ -208,7 +213,7 @@ def main():
     a = ap.parse_args()
 
     if a.dry_run:
-        print(f"PLAN: stop -> pull(stash nếu bẩn) -> pip -> start -> health({a.port}) "
+        print(f"PLAN: require-clean -> stop -> pull -> pip -> start -> health({a.port}) "
               f"-> rollback(reset {a.old_sha or '?'}) nếu không lên")
         return 0
 
@@ -220,15 +225,21 @@ def main():
     mode = service_mode()
     log(f"Chế độ restart: {mode}")
 
+    if git_dirty():
+        error = (
+            "Cây Git có sửa đổi chưa commit. Javis không tự stash vì có thể làm mất "
+            "file provider mới. Hãy commit/push thay đổi hoặc tự cất chúng rồi cập nhật lại."
+        )
+        log(error)
+        us.write_state({"phase": "done", "result": "error", "error": error,
+                        "finished_at": _now()})
+        return 1
+
     log("Dừng server cũ…")
     stop_server(mode, a.server_pid, a.port)
     time.sleep(2)
 
     us.write_state({"phase": "pulling"})
-    if git_dirty():
-        log("Cây git có sửa đổi cục bộ → git stash (giữ lại, không mất).")
-        run(["git", "stash"])
-        us.write_state({"stashed": True})
     pull = run(["git", "pull", "--ff-only"])
     if pull.returncode != 0:
         log("git pull LỖI:\n" + (pull.stderr or pull.stdout or ""))

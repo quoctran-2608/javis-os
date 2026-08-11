@@ -9,7 +9,7 @@ services:
       context: .
       args:
         CLAUDE_CLI_VERSION: ${CLAUDE_CLI_VERSION:-latest}
-    image: ghcr.io/blogminhquy/javis-os:latest
+    image: ${JAVIS_IMAGE:-ghcr.io/quoctran-2608/javis-os:latest}
     container_name: javis
     restart: unless-stopped
     env_file:

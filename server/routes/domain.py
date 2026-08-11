@@ -183,7 +183,7 @@ def _make_router() -> APIRouter:
                 "error": "Hostinger quản lý HTTPS bằng Traefik. Hãy đặt DOMAIN_NAME trong Docker Manager rồi Redeploy; Javis không thể sửa route của hPanel từ bên trong container.",
                 "hostinger": True,
                 "domain": custom,
-                "docs": "https://github.com/blogminhquy/javis-os/blob/main/docs/15-thuong-hieu-ten-mien.md",
+                "docs": "https://github.com/quoctran-2608/javis-os/blob/main/docs/15-thuong-hieu-ten-mien.md",
             }, status_code=409)
         cfg["domain"]["ssl_enabled"] = on
         cfgmod.write_settings(cfg)

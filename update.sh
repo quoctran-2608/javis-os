@@ -10,6 +10,13 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 MODE="${1:-auto}"
 SUDO=""; [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO="sudo"
 
+if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+  echo "LỖI: Cây Git có sửa đổi chưa commit."
+  echo "Javis không tự stash vì provider có thể gồm cả file mới."
+  echo "Hãy commit/push hoặc tự cất thay đổi rồi chạy update lại."
+  exit 1
+fi
+
 echo "==> Kéo code mới từ GitHub..."
 git pull --ff-only
 

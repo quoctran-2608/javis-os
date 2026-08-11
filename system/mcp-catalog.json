@@ -92,7 +92,7 @@
         "type": "qr",
         "fields": [],
         "guide": "Cần Node.js 20+. Bấm Kết nối, quét QR bằng app Zalo rồi dùng trực tiếp 7 tool MCP của zalo-agent-cli. Không còn listener/webhook/luật Zalo riêng của Javis.",
-        "guide_url": "https://github.com/blogminhquy/javis-os/blob/main/docs/12-zalo.md"
+        "guide_url": "https://github.com/quoctran-2608/javis-os/blob/main/docs/12-zalo.md"
       },
       "tool_meta": {
         "read": [

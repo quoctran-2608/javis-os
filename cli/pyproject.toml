@@ -18,8 +18,8 @@ keywords = ["javis", "cli", "ai", "agent", "second-brain"]
 dependencies = ["httpx>=0.24"]
 
 [project.urls]
-Homepage = "https://github.com/blogminhquy/javis-os"
-Documentation = "https://github.com/blogminhquy/javis-os/blob/main/docs/dev/2026-08-cli-spec.md"
+Homepage = "https://github.com/quoctran-2608/javis-os"
+Documentation = "https://github.com/quoctran-2608/javis-os/blob/main/docs/README.md"
 
 [project.scripts]
 javis = "javis_cli.__main__:main"

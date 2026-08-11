@@ -654,6 +654,7 @@
       root.dataset.currentVersion = j.current || "";
       root.dataset.previousVersion = j.previous_version || "";
       root.dataset.updateMode = j.mode || "";
+      root.dataset.imageRepo = j.image_repo || "ghcr.io/quoctran-2608/javis-os";
       if (changes) { changes.style.display = "none"; changes.innerHTML = ""; }
       const mode = updateModeLabel(j) || j.mode || "";
       if (j.update_available) {
@@ -691,8 +692,7 @@
         let state = null; try { state = await (await fetch("/update/status", { cache: "no-store" })).json(); } catch (e) {}
         if (state && state.state && state.state.phase) {
           const phase = state.state.phase, result = state.state.result;
-          const stash = state.state.stashed ? ic("package") + " Sửa đổi cục bộ đã được cất vào git stash." : "";
-          progress(phase, stash);
+          progress(phase, "");
           if (result === "success") { clearInterval(poll); status.innerHTML = OK_ICON + " Đã cập nhật xong. Đang tải lại trang…"; setTimeout(() => location.reload(), 1500); return; }
           if (result === "rolled_back") { clearInterval(poll); status.innerHTML = "↩ Bản mới lỗi, đã <b>tự quay về bản cũ</b>."; update.disabled = false; return; }
           if (["pull_failed", "rollback_failed", "error"].includes(result)) {
@@ -711,7 +711,8 @@
             if (rollback) {
               const prev = root.dataset.previousVersion || v.previous_version || "";
               rollback.style.display = "";
-              rollback.innerHTML = "<b>Cách lùi bản Docker:</b><br><code>docker compose pull && docker compose up -d</code>" + (prev ? `<br>Hoặc pin image <code>ghcr.io/blogminhquy/javis-os:${esc(prev)}</code> rồi Redeploy.` : "");
+              const imageRepo = root.dataset.imageRepo || "ghcr.io/quoctran-2608/javis-os";
+              rollback.innerHTML = "<b>Cách lùi bản Docker:</b><br><code>docker compose pull && docker compose up -d</code>" + (prev ? `<br>Hoặc pin image <code>${esc(imageRepo)}:${esc(prev)}</code> rồi Redeploy.` : "");
             }
             update.disabled = false; return;
           }
@@ -1891,7 +1892,7 @@
 
       <div class="si-log" id="lnBackupBox">
         <h3 style="font-size:15px;color:var(--text)">⇅ Đồng bộ brain với GitHub (2 chiều)</h3>
-        <p style="color:var(--text3);font-size:14px;max-width:680px;margin:2px 0 10px">Đồng bộ <b>TẤT CẢ brain trong thư mục brains</b> (mọi bộ não, ghi chú, Wiki, ký ức) với 1 repo GitHub <b>riêng tư</b>: vừa đẩy thay đổi của máy này lên, vừa kéo thay đổi từ máy khác về (dùng chung cho máy nhà + VPS, các máy tự khớp nhau). Sửa trùng 1 file ở 2 nơi thì bản mới hơn thắng, bản kia được giữ thành file <code>.conflict-*</code> ngay cạnh. Máy mới cấu hình repo rồi bấm đồng bộ là khôi phục được toàn bộ. Hướng dẫn: <a href="https://github.com/blogminhquy/javis-os/blob/main/docs/18-sao-luu-github.md" target="_blank" style="color:var(--link-ink)">docs/18-sao-luu-github.md</a>.</p>
+        <p style="color:var(--text3);font-size:14px;max-width:680px;margin:2px 0 10px">Đồng bộ <b>TẤT CẢ brain trong thư mục brains</b> (mọi bộ não, ghi chú, Wiki, ký ức) với 1 repo GitHub <b>riêng tư</b>: vừa đẩy thay đổi của máy này lên, vừa kéo thay đổi từ máy khác về (dùng chung cho máy nhà + VPS, các máy tự khớp nhau). Sửa trùng 1 file ở 2 nơi thì bản mới hơn thắng, bản kia được giữ thành file <code>.conflict-*</code> ngay cạnh. Máy mới cấu hình repo rồi bấm đồng bộ là khôi phục được toàn bộ. Hướng dẫn: <a href="https://github.com/quoctran-2608/javis-os/blob/main/docs/18-sao-luu-github.md" target="_blank" style="color:var(--link-ink)">docs/18-sao-luu-github.md</a>.</p>
         <ol style="color:var(--text3);font-size:13.5px;line-height:1.7;max-width:680px;margin:0 0 12px;padding-left:20px">
           <li>Tạo repo GitHub <b>Private</b> (trống, KHÔNG thêm README) - vd <code>javis-brain-backup</code>.</li>
           <li>Tạo token: GitHub → Settings → Developer settings → <b>Fine-grained tokens</b> → chọn đúng repo đó → quyền <b>Contents: Read and write</b> → tạo và copy token (dạng <code>github_pat_...</code>).</li>
@@ -2454,6 +2455,7 @@
       window._ovVerCur = j.current || "";
       window._ovVerPrev = j.previous_version || "";
       window._ovVerMode = j.mode || "";
+      window._ovImageRepo = j.image_repo || "ghcr.io/quoctran-2608/javis-os";
       const ml = modeLbl(j) || j.mode || "";
       if (cl) { cl.style.display = "none"; cl.innerHTML = ""; }
       if (j.update_available) {
@@ -2521,10 +2523,9 @@
         try { s = await (await fetch("/update/status", { cache: "no-store" })).json(); } catch (e) { s = null; }
         if (s && s.state && s.state.phase) {
           const ph = s.state.phase, res = s.state.result;
-          const stashNote = s.state.stashed ? ic("package") + " Sửa đổi cục bộ đã được cất vào git stash (dùng 'git stash list' để xem lại)." : "";
-          renderProgress(ph, stashNote);
+          renderProgress(ph, "");
           if (res === "success") { clearInterval(poll); st.innerHTML = OK_ICON + " Đã cập nhật xong. Đang tải lại trang…"; setTimeout(() => location.reload(), 1500); return; }
-          if (res === "rolled_back") { clearInterval(poll); renderProgress("done", stashNote); st.innerHTML = "↩ Bản mới lỗi, đã <b>tự quay về bản cũ</b>. Xem <code>update.log</code>."; verUpd.disabled = false; return; }
+          if (res === "rolled_back") { clearInterval(poll); renderProgress("done", ""); st.innerHTML = "↩ Bản mới lỗi, đã <b>tự quay về bản cũ</b>. Xem <code>update.log</code>."; verUpd.disabled = false; return; }
           if (res === "pull_failed" || res === "rollback_failed" || res === "error") {
             clearInterval(poll);
             const pb = document.getElementById("ovVerProgress"); if (pb) pb.style.display = "none";
@@ -2548,7 +2549,7 @@
               rb.style.display = "";
               rb.innerHTML = "<b>Cách lùi về bản cũ (Docker):</b><br>Pin tag phiên bản cũ rồi kéo lại:"
                 + "<br><code>docker compose pull && docker compose up -d</code>"
-                + (prev ? "<br>Hoặc sửa image thành <code>ghcr.io/blogminhquy/javis-os:" + esc(prev) + "</code> rồi Redeploy." : "");
+                + (prev ? "<br>Hoặc sửa image thành <code>" + esc(window._ovImageRepo || "ghcr.io/quoctran-2608/javis-os") + ":" + esc(prev) + "</code> rồi Redeploy." : "");
             }
             verUpd.disabled = false; return;
           }

@@ -6377,7 +6377,13 @@ async def config():
 # ============================================
 # Phiên bản + cập nhật trong UI
 # ============================================
-GITHUB_REPO = "blogminhquy/javis-os"
+GITHUB_REPO = (
+    os.getenv("JAVIS_UPDATE_REPO", "quoctran-2608/javis-os").strip()
+    or "quoctran-2608/javis-os"
+)
+IMAGE_REPO = os.getenv(
+    "JAVIS_IMAGE_REPO", f"ghcr.io/{GITHUB_REPO.lower()}"
+).strip() or f"ghcr.io/{GITHUB_REPO.lower()}"
 _UPDATE_TASKS = set()   # giữ ref mạnh cho asyncio.create_task (tránh GC nuốt mất task)
 
 
@@ -6466,7 +6472,8 @@ async def version_info():
     st = _read_update_state()
     return {"current": cur, "latest": latest, "update_available": avail,
             "mode": mode, "platform": _host_platform(), "can_self_update": can, "error": err,
-            "previous_version": st.get("previous_version")}
+            "previous_version": st.get("previous_version"),
+            "update_repo": GITHUB_REPO, "image_repo": IMAGE_REPO}
 
 
 @app.get("/update/status")

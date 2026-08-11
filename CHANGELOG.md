@@ -4,6 +4,26 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 Định dạng: mỗi phiên bản là một khối `## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
 
+## [0.27.0] - 2026-08-11
+### Thêm mới
+- **Google Antigravity CLI trở thành engine đầy đủ thứ ba bên cạnh Claude Code và Codex.** Trang Models tự dò `agy`, đăng nhập Google, ngắt kết nối, tải danh sách model live và cho chọn làm model chính hoặc model việc nền. Chat web, Telegram, chatbot chuyên trách và việc nền cùng dùng một adapter, cùng MCP Hub và cùng mức quyền.
+- **OAuth Antigravity chạy hoàn toàn trong panel.** Antigravity từ 1.1.2 đọc authorization code từ controlling terminal chứ không đọc stdin pipe. Javis nay tạo pseudo-terminal ẩn: Windows dùng `pywinpty`, Linux/macOS dùng PTY chuẩn; tự chọn Google OAuth, mở link và gửi code vào đúng terminal channel.
+- **URL OAuth dài được ghép lại trước khi đưa cho người dùng.** WinPTY wrap URL thành nhiều dòng; parser cũ chỉ lấy dòng đầu nên làm mất nửa scope và toàn bộ `state`, khiến code Google hợp lệ vẫn sai phiên PKCE. Javis chỉ trả link khi đủ `state`, `code_challenge` và `redirect_uri`.
+- **Ngắt Antigravity một chạm.** Windows xóa target `gemini:antigravity` bằng Credential API, macOS dùng Keychain, Linux dùng Secret Service; không còn bắt mở terminal gõ `/logout`.
+- **Antigravity có resume conversation, stream event, usage, retry lỗi tạm thời và MCP proxy.** Cấu hình MCP không ghi secret xuống đĩa; token Hub chỉ đi qua biến môi trường của process.
+- **Fork production có công cụ nhận upstream an toàn.** `python tools/sync_upstream.py` kiểm cây sạch và hai remote, tạo nhánh `sync/upstream-<VERSION>`, merge upstream tại đó và dừng nguyên trạng nếu có conflict.
+
+### Cải thiện
+- **Kênh cập nhật mặc định chuyển sang `quoctran-2608/javis-os`.** Version check, changelog, Docker compose, GHCR image, metadata và link deploy cùng trỏ về fork production. Có thể đổi bằng `JAVIS_UPDATE_REPO`, `JAVIS_IMAGE_REPO` và `JAVIS_IMAGE`.
+- **Credential ba CLI tách khỏi source và giữ qua update.** Docker có volume riêng cho `~/.claude`, `~/.codex` và `~/.gemini`; thay image, redeploy hoặc rollback không buộc đăng nhập lại.
+- **CI thêm job Windows CLI auth.** Job này cài đúng dependency Windows và canh các hợp đồng đã từng hỏng: đường cài `agy`, pseudo-terminal, URL wrap/PKCE, gửi code và logout.
+- **Updater không tự stash source tùy biến.** Nếu có file tracked hoặc untracked chưa commit, updater dừng trước khi tắt server và nói rõ phải commit/push hoặc tự cất. Một provider có thể gồm cả file mới; stash nửa bộ từng tạo trạng thái nửa cũ nửa mới.
+
+### Kiểm thử
+- Adapter Antigravity có test model/stream, auth file/keyring, OAuth PTY, URL PKCE, logout, MCP config, process cancellation, retry và file promotion.
+- Có lượt chat tích hợp thật qua WebSocket giả lập, canary provider cho chatbot/việc nền, route table, connect health, usage group và UI Models.
+- Merge sạch hai bản upstream 0.26.15 và 0.26.16 trước khi phát hành.
+
 ## [0.26.16] - 2026-08-10
 ### Thêm mới
 - **Nút Lùi / Tiến giữa các note trong trình sửa.** Đọc wiki là đi theo chuỗi `[[wikilink]]`: bấm một cái là rời khỏi note đang đọc, mà trước bản này KHÔNG có đường về - phải đi tìm lại file cũ trong cây. Nghĩa là mỗi cú bấm link là một quyết định một chiều, đúng thứ làm người ta ngại bấm link trong chính vault của mình.

@@ -44,7 +44,7 @@ bảy tool MCP bên dưới.
 
 Nút **Hướng dẫn trên GitHub** trong thẻ Zalo luôn mở trang tài liệu này:
 
-<https://github.com/blogminhquy/javis-os/blob/main/docs/12-zalo.md>
+<https://github.com/quoctran-2608/javis-os/blob/main/docs/12-zalo.md>
 
 ## Các tool MCP
 

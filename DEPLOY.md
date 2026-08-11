@@ -13,7 +13,7 @@ Javis OS là một AI agent cá nhân + Second Brain. Bộ não có thể là **
 
 VPS Hostinger → **Docker Manager → Compose → URL** → dán link rồi **Deploy**:
 ```
-https://raw.githubusercontent.com/blogminhquy/javis-os/main/docker-compose.yml
+https://raw.githubusercontent.com/quoctran-2608/javis-os/main/docker-compose.yml
 ```
 Hostinger pull image + chạy. Mở app bằng `http://<ip-vps>:7777` (IP xem ở hPanel → VPS) → ra
 màn **tạo tài khoản admin**.
@@ -43,7 +43,7 @@ màn **tạo tài khoản admin**.
 Cần Docker. Chưa có? `curl -fsSL https://get.docker.com | sh`
 ```bash
 mkdir javis && cd javis
-curl -fsSLO https://raw.githubusercontent.com/blogminhquy/javis-os/main/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/quoctran-2608/javis-os/main/docker-compose.yml
 
 docker compose run --rm javis claude auth login --claudeai   # ĐĂNG NHẬP CLAUDE 1 LẦN (link + code)
 docker compose up -d                                          # pull image GHCR + chạy
@@ -86,7 +86,7 @@ link riêng chạy HTTPS mà không cần mua tên miền. **Lưu ý (đã kiể
 1. Xem **hostname VPS** ở hPanel → VPS (vd `srv1782015.hstgr.cloud`).
 2. Docker Manager → Compose → URL:
    ```
-   https://raw.githubusercontent.com/blogminhquy/javis-os/main/docker-compose.hostinger.yml
+   https://raw.githubusercontent.com/quoctran-2608/javis-os/main/docker-compose.hostinger.yml
    ```
 3. Ô **Environment** của mẫu mới chỉ còn 3 trường có ý nghĩa:
    - `DOMAIN_NAME`: đặt `javis.<hostname-vps>.hstgr.cloud`
@@ -139,7 +139,7 @@ Mở giao diện Javis từ máy khác mà KHÔNG cần mở port / không cần
 ## Cách 2 - Cài trực tiếp lên Linux/macOS (không Docker)
 
 ```bash
-git clone https://github.com/blogminhquy/javis-os.git javis && cd javis
+git clone https://github.com/quoctran-2608/javis-os.git javis && cd javis
 chmod +x install.sh && ./install.sh
 ```
 
@@ -200,7 +200,46 @@ git pull && docker compose build && docker compose up -d          # Docker
 git pull && ./.venv/bin/pip install -r requirements.txt && sudo systemctl restart javis   # Native
 ```
 
-Trên máy Windows của bạn, đẩy code lên GitHub: `git add -A && git commit -m "..." && git push`
+Trên máy Windows của bạn, đẩy code lên fork production:
+`git add -A && git commit -m "..." && git push origin main`.
+
+### Đồng bộ bản mới từ upstream mà không mất ba CLI
+
+Fork production dùng hai remote:
+
+```bash
+git remote -v
+# origin   git@github.com:quoctran-2608/javis-os.git
+# upstream git@github.com:blogminhquy/javis-os.git
+```
+
+Không sửa trực tiếp trên VPS. Trên máy phát triển, cách ngắn nhất:
+
+```bash
+python tools/sync_upstream.py
+```
+
+Lệnh này chỉ chạy khi cây Git sạch và đang ở `main`, tự tạo nhánh
+`sync/upstream-<VERSION>`, merge upstream trên nhánh đó rồi in các lệnh test/merge tiếp theo.
+Nó không tự push và không tự đoán khi có conflict.
+
+Làm tay tương đương:
+
+```bash
+git fetch upstream
+git switch -c sync/upstream-<phien-ban> main
+git merge upstream/main
+python tests/python/test_antigravity_cli.py
+python tests/python/test_luot_chat_antigravity.py
+python tests/python/test_update.py
+git switch main
+git merge --no-ff sync/upstream-<phien-ban>
+git push origin main
+```
+
+CI của fork kiểm cả Linux lẫn OAuth Windows, rồi build
+`ghcr.io/quoctran-2608/javis-os:<VERSION>`. VPS chỉ cần pull/redeploy image đó.
+Credential Claude, Codex và Antigravity nằm trong ba volume riêng nên không mất khi thay image.
 
 Để trống = dùng mặc định in-repo → cài trên máy mới chạy được ngay, không cần sửa gì.
 

@@ -108,6 +108,9 @@ Lưu ý: hai biến TTS này áp cho giọng Edge TTS miễn phí mặc định.
 | `DOMAIN_NAME` | Tên miền mà reverse proxy (Traefik của Hostinger) định tuyến về Javis. Javis đọc để đối chiếu với tên miền bạn nhập trong app và biết có cần Redeploy không | (trống; compose Hostinger đặt `localhost`) | Deploy Hostinger: đặt bằng tên miền của bạn trong Docker Manager rồi Redeploy. Wizard trong app có nút **Sao chép biến** để copy sẵn dòng này. |
 | `JAVIS_DEPLOY_TARGET` | Khai rõ đang chạy ở môi trường nào: `hostinger`, `vps`, `native`, `windows` | Tự đoán (hostname `.hstgr.cloud` = hostinger; chạy Docker = vps) | Hầu như không cần đặt tay. Compose Hostinger đã đặt sẵn `hostinger`. Đặt khi Javis đoán sai môi trường và wizard tên miền hiện sai hướng dẫn. |
 | `WATCHTOWER_TOKEN` | Token cho nút "Cập nhật ngay" (trang **Cập nhật**) gọi Watchtower khi chạy Docker | Trong `docker-compose.yml`: `javis-update`. Ngoài Docker: trống (không có biến thì Javis coi như Watchtower không chạy) | Muốn chặt hơn: đổi thành chuỗi ngẫu nhiên, đặt cùng giá trị cho cả app lẫn service watchtower. |
+| `JAVIS_UPDATE_REPO` | Repo GitHub mà trang Cập nhật đọc `VERSION`, `CHANGELOG.md` và thông báo | `quoctran-2608/javis-os` | Chỉ đổi khi bạn chuyển fork production sang repo khác. Dạng `owner/repo`, không kèm URL. |
+| `JAVIS_IMAGE_REPO` | Tên GHCR image dùng trong hướng dẫn rollback của dashboard | `ghcr.io/quoctran-2608/javis-os` | Đổi cùng lúc với image production của fork. Không kèm tag. |
+| `JAVIS_IMAGE` | Image đầy đủ mà `docker-compose.yml` và `docker-compose.build.yml` chạy | `ghcr.io/quoctran-2608/javis-os:latest` | Pin tag cũ để rollback hoặc tag version cố định để deploy có thể lặp lại. Compose Hostinger cố ý ghim image fork để ô Environment chỉ còn ba trường người dùng. |
 
 ### Nhóm 7: Biến nâng cao (hiếm khi cần đụng)
 
