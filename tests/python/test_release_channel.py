@@ -24,7 +24,7 @@ publish = (ROOT / ".github" / "workflows" / "docker-publish.yml").read_text(
 requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
 version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
-check("release là 0.27.0", version == "0.27.0")
+check("release là 0.27.1", version == "0.27.1")
 check("backend mặc định kiểm version từ fork",
       '"quoctran-2608/javis-os"' in main and "JAVIS_UPDATE_REPO" in main)
 check("backend công bố image repo cho UI rollback",

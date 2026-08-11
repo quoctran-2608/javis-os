@@ -191,6 +191,189 @@ def test_login_pty_selects_google_and_sends_code(monkeypatch, tmp_path):
     assert fake.alive is False
 
 
+def test_login_args_does_not_probe_models_before_oauth(monkeypatch):
+    monkeypatch.setattr(
+        antigravity_cli,
+        "list_models",
+        lambda **_kw: (_ for _ in ()).throw(
+            AssertionError("login must not run agy models before OAuth")),
+    )
+
+    args = antigravity_cli._login_args("/usr/local/bin/agy")
+
+    assert args[0] == "/usr/local/bin/agy"
+    assert "--model" not in args
+
+
+def test_login_start_wait_allows_slow_vps_network():
+    assert antigravity_cli._LOGIN_START_WAIT_S >= 40
+    assert antigravity_cli._LOGIN_START_WAIT_S < 60
+
+
+def test_posix_login_env_forces_remote_url_flow(monkeypatch):
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+    monkeypatch.delenv("SSH_CLIENT", raising=False)
+    monkeypatch.delenv("TERM", raising=False)
+    monkeypatch.setattr(antigravity_cli.os, "name", "posix")
+
+    env = antigravity_cli._login_process_env()
+
+    assert env["SSH_CONNECTION"]
+    assert env["SSH_CLIENT"]
+    assert env["NO_COLOR"] == "1"
+    assert env["TERM"] == "xterm-256color"
+
+
+def test_login_storage_reports_unwritable_docker_volume(monkeypatch, tmp_path):
+    root = tmp_path / ".gemini"
+    monkeypatch.setattr(antigravity_cli.Path, "home", lambda: tmp_path)
+    original = antigravity_cli.Path.write_text
+
+    def deny_probe(path, *args, **kwargs):
+        if path.name.startswith(".javis-write-probe-"):
+            raise PermissionError("permission denied")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(antigravity_cli.Path, "write_text", deny_probe)
+    monkeypatch.setattr(antigravity_cli.os, "name", "posix")
+    monkeypatch.setattr(
+        antigravity_cli.Path,
+        "exists",
+        lambda path: True if str(path) == "/.dockerenv" else path.is_dir(),
+    )
+
+    error = antigravity_cli._login_storage_error()
+
+    assert str(root) in error
+    assert "PermissionError" in error
+    assert "chown -R 10001:10001 /home/javis/.gemini" in error
+
+
+def test_complete_url_is_ready_without_fixed_prompt(monkeypatch, tmp_path):
+    binary = _fake_binary(tmp_path)
+    oauth_url = (
+        "https://accounts.google.com/o/oauth2/auth?"
+        "code_challenge=challenge&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback"
+        "&state=test"
+    )
+
+    class FakePTY:
+        def __init__(self):
+            self.pid = 456
+            self.alive = True
+            self.sent = False
+
+        def read(self, _size=8192):
+            if not self.sent:
+                self.sent = True
+                return f"Authentication required. Visit this link:\n{oauth_url}\n"
+            import time
+            time.sleep(0.01)
+            return ""
+
+        def write(self, _text):
+            pass
+
+        def is_alive(self):
+            return self.alive
+
+        def terminate(self):
+            self.alive = False
+
+    fake = FakePTY()
+    monkeypatch.setenv("JAVIS_ANTIGRAVITY_BIN", str(binary))
+    monkeypatch.setenv("JAVIS_ANTIGRAVITY_TOKEN_FILE", str(tmp_path / "missing.json"))
+    monkeypatch.setattr(antigravity_cli, "_spawn_login_pty", lambda _args: fake)
+    monkeypatch.setattr(antigravity_cli, "list_models", lambda **_kw: None)
+
+    result = antigravity_cli.auth_login_ui_start()
+
+    assert result == {"ok": True, "url": oauth_url, "done": False, "error": ""}
+    antigravity_cli._login_stop()
+
+
+def test_login_failure_returns_sanitized_terminal_tail(monkeypatch, tmp_path):
+    binary = _fake_binary(tmp_path)
+
+    class FakePTY:
+        def __init__(self):
+            self.pid = 789
+            self.alive = True
+            self.sent = False
+
+        def read(self, _size=8192):
+            if not self.sent:
+                self.sent = True
+                self.alive = False
+                return (
+                    "Open https://accounts.google.com/test?"
+                    "state=secret&code_challenge=secret\n"
+                    "browser launch failed\n"
+                )
+            return ""
+
+        def write(self, _text):
+            pass
+
+        def is_alive(self):
+            return self.alive
+
+        def terminate(self):
+            self.alive = False
+
+    fake = FakePTY()
+    monkeypatch.setenv("JAVIS_ANTIGRAVITY_BIN", str(binary))
+    monkeypatch.setenv("JAVIS_ANTIGRAVITY_TOKEN_FILE", str(tmp_path / "missing.json"))
+    monkeypatch.setattr(antigravity_cli, "_spawn_login_pty", lambda _args: fake)
+    monkeypatch.setattr(antigravity_cli, "list_models", lambda **_kw: None)
+
+    result = antigravity_cli.auth_login_ui_start()
+
+    assert result["ok"] is False
+    assert "đã dừng" in result["error"]
+    assert "browser launch failed" in result["error"]
+    assert "accounts.google.com" not in result["error"]
+    assert "secret" not in result["error"]
+
+
+def test_reader_drains_error_after_process_exits(monkeypatch, tmp_path):
+    binary = _fake_binary(tmp_path)
+
+    class FakePTY:
+        def __init__(self):
+            self.pid = 790
+            self.alive = False
+            self.reads = 0
+
+        def read(self, _size=8192):
+            self.reads += 1
+            if self.reads == 1:
+                return "credential directory: permission denied\n"
+            raise EOFError
+
+        def write(self, _text):
+            pass
+
+        def is_alive(self):
+            return self.alive
+
+        def terminate(self):
+            self.alive = False
+
+    fake = FakePTY()
+    monkeypatch.setenv("JAVIS_ANTIGRAVITY_BIN", str(binary))
+    monkeypatch.setenv("JAVIS_ANTIGRAVITY_TOKEN_FILE", str(tmp_path / "missing.json"))
+    monkeypatch.setattr(antigravity_cli, "_login_storage_error", lambda: "")
+    monkeypatch.setattr(antigravity_cli, "_spawn_login_pty", lambda _args: fake)
+    monkeypatch.setattr(antigravity_cli, "list_models", lambda **_kw: None)
+
+    result = antigravity_cli.auth_login_ui_start()
+
+    assert result["ok"] is False
+    assert "permission denied" in result["error"]
+    assert fake.reads >= 1
+
+
 def test_wrapped_oauth_url_is_reassembled_before_return():
     wrapped = (
         "\x1b[36mhttps://accounts.google.com/o/oauth2/auth?"
@@ -203,6 +386,28 @@ def test_wrapped_oauth_url_is_reassembled_before_return():
     assert "\n" not in url and " " not in url
     assert "oauth-callback" in url
     assert "state=session-value" in url
+    assert antigravity_cli._oauth_url_complete(url) is True
+
+
+def test_linux_oauth_url_stops_before_waiting_status():
+    """AGY 1.1.12 Linux in status giữa URL và prompt; không được nối vào href."""
+    raw_url = (
+        "https://accounts.google.com/o/oauth2/auth?"
+        "client_id=test&code_challenge=challenge"
+        "&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback"
+        "&state=session-value"
+    )
+    output = (
+        "Authentication required. Please visit the URL to log in:\n"
+        f"  {raw_url}\n"
+        "Waiting for authentication (timeout 60s)...\n"
+        "Or, paste the authorization code here and press Enter:\n"
+    )
+
+    url = antigravity_cli._extract_oauth_url(output)
+
+    assert url == raw_url
+    assert "Waiting" not in url and "Or," not in url
     assert antigravity_cli._oauth_url_complete(url) is True
 
 

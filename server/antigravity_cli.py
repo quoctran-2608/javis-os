@@ -59,6 +59,7 @@ _MCP_CONFIG_LOCK = threading.Lock()
 _AUTH_CACHE = {"ts": 0.0, "connected": False}
 _KEYRING_SERVICE = "gemini"
 _KEYRING_ACCOUNT = "antigravity"
+_LOGIN_START_WAIT_S = 45.0
 
 
 def _no_window() -> int:
@@ -394,8 +395,10 @@ def list_models(timeout: float = 30.0, cli_path: Optional[str] = None) -> Option
 
 
 def _login_args(cli: str) -> list[str]:
-    models = list_models(timeout=20, cli_path=cli) or {}
-    args = [
+    # Không gọi `agy models` trước OAuth. Khi chưa đăng nhập lệnh này chỉ tốn thêm
+    # vài giây; trên VPS chậm nó còn có thể giữ credential store đúng lúc phiên
+    # OAuth chuẩn bị mở. Model không cần thiết để CLI phát link đăng nhập.
+    return [
         cli,
         "-p",
         "Reply with exactly OK.",
@@ -404,10 +407,25 @@ def _login_args(cli: str) -> list[str]:
         "--print-timeout",
         "90s",
     ]
-    default = models.get("default_model")
-    if default:
-        args += ["--model", default]
-    return args
+
+
+def _login_process_env() -> dict:
+    """Môi trường riêng cho OAuth, ép POSIX dùng flow URL của máy remote.
+
+    Tài liệu AGY phân biệt máy local (tự mở browser) với SSH/headless (in URL +
+    nhận code). Javis trên Docker được gọi qua HTTP nên không có biến SSH dù bản
+    chất là máy remote. Gắn dấu SSH giả chỉ cho process OAuth để AGY không cố mở
+    browser bên trong container.
+    """
+    env = dict(os.environ)
+    env.setdefault("NO_COLOR", "1")
+    env.setdefault("TERM", "xterm-256color")
+    if os.name != "nt":
+        if not str(env.get("SSH_CONNECTION") or "").strip():
+            env["SSH_CONNECTION"] = "127.0.0.1 0 127.0.0.1 0"
+        if not str(env.get("SSH_CLIENT") or "").strip():
+            env["SSH_CLIENT"] = "127.0.0.1 0 0"
+    return env
 
 
 class _WindowsLoginPTY:
@@ -423,7 +441,7 @@ class _WindowsLoginPTY:
         self._proc = PtyProcess.spawn(
             args,
             cwd=os.getcwd(),
-            env=dict(os.environ),
+            env=_login_process_env(),
             dimensions=(30, 2000),
             backend=Backend.WinPTY,
         )
@@ -471,6 +489,7 @@ class _PosixLoginPTY:
                 stdout=slave_fd,
                 stderr=slave_fd,
                 close_fds=True,
+                env=_login_process_env(),
             )
         finally:
             os.close(slave_fd)
@@ -544,6 +563,8 @@ def _extract_oauth_url(text: str) -> str:
         "if you aren't automatically redirected",
         "after authenticating, copy the code",
         "paste the authorization code",
+        "waiting for authentication",
+        "or, paste the authorization code",
     ]
     ends = [low.find(marker) for marker in boundaries if low.find(marker) >= 0]
     if ends:
@@ -588,25 +609,82 @@ def _friendly_login_error(text: str) -> str:
     return ""
 
 
+def _sanitized_login_tail(lines: list[str], limit: int = 6) -> str:
+    """Trace ngắn để chẩn đoán VPS, nhưng không trả URL PKCE/token ra UI/log."""
+    safe = []
+    for raw in lines or []:
+        line = _clean_terminal_text(str(raw)).strip()
+        if not line:
+            continue
+        line = _URL_RE.sub("[link OAuth đã ẩn]", line)
+        line = re.sub(
+            r"\b(state|code_challenge|code|access_token|refresh_token)=\S+",
+            r"\1=[đã ẩn]",
+            line,
+            flags=re.I,
+        )
+        safe.append(line[:500])
+    return " | ".join(safe[-max(1, int(limit)):])[:1200]
+
+
+def _login_storage_error() -> str:
+    """Bắt volume auth sai owner/read-only trước khi AGY chết trong PTY."""
+    root = Path.home() / ".gemini"
+    probe = root / f".javis-write-probe-{os.getpid()}-{threading.get_ident()}"
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+        return ""
+    except Exception as exc:  # noqa: BLE001 - cần trả lỗi filesystem đọc được
+        try:
+            probe.unlink(missing_ok=True)
+        except Exception:
+            pass
+        message = (
+            f"Antigravity không ghi được thư mục credential {root}: "
+            f"{type(exc).__name__}: {exc}."
+        )
+        if os.name != "nt" and Path("/.dockerenv").exists():
+            message += (
+                " Trên VPS Docker, chạy: "
+                "`docker compose exec -u root javis "
+                "chown -R 10001:10001 /home/javis/.gemini`, rồi thử lại."
+            )
+        return message
+
+
 def auth_login_ui_start() -> dict:
     """Bắt đầu Google Sign-In và trả URL để frontend mở."""
     cli = find_antigravity_cli()
     if not cli:
         return {"ok": False, "error": "Antigravity CLI chưa cài"}
     _login_stop()
+    storage_error = _login_storage_error()
+    if storage_error:
+        return {"ok": False, "error": storage_error}
     try:
         proc = _spawn_login_pty(_login_args(cli))
     except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     _LOGIN["proc"] = proc
+    reader_done = threading.Event()
 
     def read_terminal():
         raw_buffer = ""
         selected_google = False
         try:
-            while proc.is_alive():
-                chunk = proc.read(8192)
+            # Đọc tới EOF thay vì dừng ngay khi process vừa thoát. Trên VPS,
+            # lỗi permission/keyring có thể làm AGY chết trước khi thread này
+            # được lên lịch; PTY vẫn còn stderr chờ đọc.
+            while True:
+                try:
+                    chunk = proc.read(8192)
+                except (EOFError, OSError):
+                    break
                 if not chunk:
+                    if not proc.is_alive():
+                        break
                     continue
                 raw_buffer = (raw_buffer + chunk)[-65536:]
                 clean = _clean_terminal_text(raw_buffer)
@@ -618,6 +696,10 @@ def auth_login_ui_start() -> dict:
                 oauth_url = _extract_oauth_url(clean)
                 if _oauth_url_complete(oauth_url):
                     _LOGIN["url"] = oauth_url
+                    # Một số bản AGY/VPS chỉ in URL rồi chờ ở /dev/tty, không
+                    # dùng đúng câu "authorization code" mà parser cũ đòi.
+                    # URL đủ state + PKCE + redirect_uri đã là cổng an toàn.
+                    _LOGIN["ready"] = True
                 if (
                     "authorization code" in low
                     or "paste the code displayed in the browser" in low
@@ -636,18 +718,37 @@ def auth_login_ui_start() -> dict:
         except Exception as exc:  # noqa: BLE001 - trạng thái login phải giữ lỗi
             if proc.is_alive():
                 _LOGIN["error"] = f"{type(exc).__name__}: {exc}"
+        finally:
+            reader_done.set()
 
     threading.Thread(target=read_terminal, daemon=True).start()
 
-    for _ in range(75):
-        if _LOGIN["ready"] or _LOGIN["done"] or _LOGIN["error"] or not proc.is_alive():
+    deadline = time.monotonic() + _LOGIN_START_WAIT_S
+    while time.monotonic() < deadline:
+        if _LOGIN["ready"] or _LOGIN["done"] or _LOGIN["error"]:
+            break
+        if not proc.is_alive() and reader_done.wait(timeout=0.2):
             break
         time.sleep(0.2)
     if not _LOGIN["ready"]:
+        # Process đã chết nhanh thì cho reader một nhịp cuối để lấy stderr còn
+        # nằm trong PTY trước khi dựng thông báo cho UI.
+        if not proc.is_alive():
+            reader_done.wait(timeout=1.0)
         if auth_status().get("connected"):
             _LOGIN["done"] = True
             return {"ok": True, "done": True, "url": ""}
-        error = _LOGIN["error"] or "Không lấy được link đăng nhập từ Antigravity CLI."
+        error = _LOGIN["error"]
+        if not error:
+            detail = _sanitized_login_tail(_LOGIN.get("lines") or [])
+            stopped = not proc.is_alive()
+            error = (
+                "Antigravity CLI đã dừng trước khi phát link đăng nhập."
+                if stopped else
+                "Antigravity CLI chưa phát link đăng nhập trong thời gian chờ."
+            )
+            if detail:
+                error += f" Chi tiết: {detail}"
         _login_stop()
         return {"ok": False, "error": error}
     return {"ok": True, "url": _LOGIN["url"], "done": False, "error": ""}

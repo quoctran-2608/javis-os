@@ -4,6 +4,19 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 Định dạng: mỗi phiên bản là một khối `## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
 
+## [0.27.1] - 2026-08-11
+### Sửa lỗi
+- **Nút Đăng nhập Google của Antigravity nay trả đúng link trên VPS/Linux.** `agy 1.1.12` in thêm dòng `Waiting for authentication...` giữa URL OAuth và câu nhắc dán code. Parser cũ ghép mọi khoảng trắng trong block nên nối cả dòng trạng thái vào cuối URL; Windows dùng output khác nên không dính lỗi này. Parser nay dừng đúng trước dòng trạng thái và chỉ trả URL khi đủ `state`, `code_challenge` và `redirect_uri`.
+- **Lỗi OAuth trên VPS không còn bị che bằng câu chung chung.** Javis đọc nốt stderr kể cả khi `agy` vừa thoát, tăng thời gian chờ link từ 15 lên 45 giây, bỏ lần gọi `agy models` thừa trước OAuth, ép flow URL headless trên POSIX và trả trace ngắn đã che URL/token.
+- **Volume credential Antigravity sai quyền được phát hiện trước khi mở OAuth.** Nếu `/home/javis/.gemini` không ghi được, UI gọi đúng lỗi filesystem và đưa lệnh `chown` an toàn; không còn chờ hết giờ rồi báo “Không lấy được link”.
+
+### Cải thiện
+- **Visual Brain tách rõ Tri thức, Chủ đề và Toàn bộ ghi chú.** Chế độ Chủ đề dùng tag YAML của Obsidian làm node ảo để gom các trang Wiki, chỉ hiện tag nối từ hai trang trở lên. Catalog, index, log và file hệ thống không còn tạo siêu nút làm méo sơ đồ; trình duyệt từng nhớ chế độ Toàn bộ cũ sẽ trở về Tri thức một lần sau cập nhật.
+
+### Kiểm thử
+- Adapter Antigravity có 31 test, gồm mẫu output Linux thật của `agy`, URL không dính dòng `Waiting`, flow headless, timeout VPS, volume không ghi được và stderr còn lại sau khi process thoát.
+- Smoke test với binary Antigravity thật trả URL PKCE hoàn chỉnh trong dưới 2 giây; parser trả đúng 704 ký tự của dòng URL gốc, không nối thêm trạng thái terminal.
+
 ## [0.27.0] - 2026-08-11
 ### Thêm mới
 - **Google Antigravity CLI trở thành engine đầy đủ thứ ba bên cạnh Claude Code và Codex.** Trang Models tự dò `agy`, đăng nhập Google, ngắt kết nối, tải danh sách model live và cho chọn làm model chính hoặc model việc nền. Chat web, Telegram, chatbot chuyên trách và việc nền cùng dùng một adapter, cùng MCP Hub và cùng mức quyền.
@@ -14,7 +27,6 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 - **Fork production có công cụ nhận upstream an toàn.** `python tools/sync_upstream.py` kiểm cây sạch và hai remote, tạo nhánh `sync/upstream-<VERSION>`, merge upstream tại đó và dừng nguyên trạng nếu có conflict.
 
 ### Cải thiện
-- **Visual Brain tách rõ Tri thức, Chủ đề và Toàn bộ ghi chú.** Chế độ Chủ đề dùng tag YAML của Obsidian làm node ảo để gom các trang Wiki, chỉ hiện tag nối từ hai trang trở lên. Catalog, index, log và file hệ thống không còn tạo siêu nút làm méo sơ đồ; trình duyệt từng nhớ chế độ Toàn bộ cũ sẽ trở về Tri thức một lần sau cập nhật.
 - **Kênh cập nhật mặc định chuyển sang `quoctran-2608/javis-os`.** Version check, changelog, Docker compose, GHCR image, metadata và link deploy cùng trỏ về fork production. Có thể đổi bằng `JAVIS_UPDATE_REPO`, `JAVIS_IMAGE_REPO` và `JAVIS_IMAGE`.
 - **Credential ba CLI tách khỏi source và giữ qua update.** Docker có volume riêng cho `~/.claude`, `~/.codex` và `~/.gemini`; thay image, redeploy hoặc rollback không buộc đăng nhập lại.
 - **CI thêm job Windows CLI auth.** Job này cài đúng dependency Windows và canh các hợp đồng đã từng hỏng: đường cài `agy`, pseudo-terminal, URL wrap/PKCE, gửi code và logout.
