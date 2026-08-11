@@ -758,6 +758,7 @@ function trackMCP(toolName) {
 // ============================================
 const graphStats = document.getElementById("graphStats");
 const graphSource = document.getElementById("graphSource");
+const graphScope = document.getElementById("graphScope");
 let javisGraph = null;
 
 let _lib2dPromise = null;
@@ -873,9 +874,10 @@ async function reloadGraph() {
   if (!javisGraph) return;
   graphStats.textContent = "Đang tải...";
   const val = graphSource.value;
-  const query = val.startsWith("path:")
+  const baseQuery = val.startsWith("path:")
     ? `path=${encodeURIComponent(val.slice(5))}`
     : `source=${val}`;
+  const query = `${baseQuery}&scope=${encodeURIComponent(graphScope.value)}&orphans=1`;
   try {
     const data = await javisGraph.load(query);
     const stats = data.stats || {};
@@ -904,6 +906,12 @@ graphSource.addEventListener("change", () => {
   loadBrainStats(); // agent/skill/workflow theo vault
   checkVault();     // kiểm tra cấu trúc vault mới chọn
 });
+graphScope.value = localStorage.getItem("javis.graphScope") === "all" ? "all" : "knowledge";
+graphScope.addEventListener("change", () => {
+  localStorage.setItem("javis.graphScope", graphScope.value);
+  reloadGraph();
+  connectGraphWatch();
+});
 
 // ============================================
 // Realtime graph watch - node mọc lên khi brain sinh note mới
@@ -914,9 +922,10 @@ function connectGraphWatch() {
   if (graphWs) { try { graphWs.onclose = null; graphWs.close(); } catch (e) {} graphWs = null; }
   clearTimeout(graphWatchReconnect);
   const val = graphSource.value;
-  const q = val.startsWith("path:")
+  const baseQuery = val.startsWith("path:")
     ? `path=${encodeURIComponent(val.slice(5))}`
     : `source=${encodeURIComponent(val)}`;
+  const q = `${baseQuery}&scope=${encodeURIComponent(graphScope.value)}`;
   graphWs = new WebSocket(`${WS_ORIGIN}/ws/graph?${q}`);
   graphWs.onmessage = (e) => {
     let m; try { m = JSON.parse(e.data); } catch (_) { return; }

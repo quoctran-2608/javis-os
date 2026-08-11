@@ -39,6 +39,10 @@
           <select id="graphSource" class="graph-select">
             <option value="brain">Brain Default</option>
           </select>
+          <select id="graphScope" class="graph-select" title="Phạm vi sơ đồ Visual Brain">
+            <option value="knowledge">Tri thức</option>
+            <option value="all">Toàn bộ ghi chú</option>
+          </select>
           <button class="graph-folder-btn" id="newBrainBtn" title="Tạo brain mới trong thư mục brains"><i data-ic="plus"></i></button>
           <button class="graph-folder-btn" id="delBrainBtn" title="Xoá brain đang chọn (xác nhận gõ đúng tên)"><i data-ic="trash-2"></i></button>
           <button class="graph-folder-btn" id="pickFolderBtn" title="Chọn brain từ folder ngoài bất kỳ"><i data-ic="folder-open"></i></button>
@@ -701,7 +705,7 @@
   <script src="/static/chat-ask.js?v=1"></script>
   <script src="/static/chat-slash.js?v=1"></script>
   <script src="/static/chat-acts.js?v=1"></script>
-  <script src="/static/app.js?v=82"></script>
+  <script src="/static/app.js?v=83"></script>
   <!-- Sau app.js: dải việc nền đọc window.JavisSessions (app.js dựng) để biết phiên + brain. -->
   <script src="/static/background-strip.js?v=1"></script>
   <script src="/static/model-picker.js?v=4"></script>

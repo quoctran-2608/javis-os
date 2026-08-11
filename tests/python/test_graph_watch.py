@@ -44,6 +44,24 @@ def _recv_json(ws, timeout=10):
         fut = ex.submit(ws.receive_text)
         return json.loads(fut.result(timeout=timeout))
 
+# --- phạm vi tri thức chỉ quét thư mục wiki nếu brain có lớp này ---
+scope_root = tempfile.mkdtemp(prefix="javis-graph-scope-")
+os.makedirs(os.path.join(scope_root, "wiki"), exist_ok=True)
+with open(os.path.join(scope_root, "nguon.md"), "w", encoding="utf-8") as f:
+    f.write("nguồn thô")
+with open(os.path.join(scope_root, "wiki", "tri-thuc.md"), "w", encoding="utf-8") as f:
+    f.write("tri thức")
+with open(os.path.join(scope_root, "wiki", "index.md"), "w", encoding="utf-8") as f:
+    f.write("chỉ mục nội bộ")
+from graph_builder import build_graph  # noqa: E402
+scope_data = build_graph(
+    graph_routes._resolve_graph_roots("brain", scope_root, "knowledge"),
+    include_orphans=True,
+    knowledge_only=True,
+)
+check("scope knowledge chỉ hiện lớp wiki",
+      [n.get("label") for n in scope_data.get("nodes", [])] == ["tri-thuc"])
+
 # File có TRƯỚC khi kết nối → nằm trong baseline, sửa nó phải ra isNew=False
 _write("cu.md", "note cũ, chưa có link")
 time.sleep(0.2)

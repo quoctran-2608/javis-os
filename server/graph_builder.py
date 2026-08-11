@@ -30,7 +30,19 @@ def _top_folder(rel_path: str) -> str:
     return parts[0] if len(parts) > 1 else "root"
 
 
-def build_graph(roots: List[str], max_files: int = 2000, include_orphans: bool = False) -> Dict:
+def _knowledge_file_visible(fpath: str, root: str) -> bool:
+    """Loại trang điều hành khỏi sơ đồ tri thức mà không ảnh hưởng dữ liệu trên đĩa."""
+    try:
+        rel = Path(fpath).relative_to(root)
+    except ValueError:
+        rel = Path(fpath)
+    if any(part.startswith("_") for part in rel.parts):
+        return False
+    return rel.name.casefold() not in {"index.md", "log.md"}
+
+
+def build_graph(roots: List[str], max_files: int = 2000, include_orphans: bool = False,
+                knowledge_only: bool = False) -> Dict:
     """
     Quét nhiều thư mục root, dựng graph.
     roots: list các đường dẫn thư mục chứa .md
@@ -48,6 +60,8 @@ def build_graph(roots: List[str], max_files: int = 2000, include_orphans: bool =
             continue
         root_name = Path(root).name
         for fpath in glob.glob(f"{root}/**/*.md", recursive=True):
+            if knowledge_only and not _knowledge_file_visible(fpath, root):
+                continue
             if file_count >= max_files:
                 break
             try:
