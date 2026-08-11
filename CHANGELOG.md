@@ -4,6 +4,36 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 Định dạng: mỗi phiên bản là một khối `## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
 
+## [0.26.16] - 2026-08-10
+### Thêm mới
+- **Nút Lùi / Tiến giữa các note trong trình sửa.** Đọc wiki là đi theo chuỗi `[[wikilink]]`: bấm một cái là rời khỏi note đang đọc, mà trước bản này KHÔNG có đường về - phải đi tìm lại file cũ trong cây. Nghĩa là mỗi cú bấm link là một quyết định một chiều, đúng thứ làm người ta ngại bấm link trong chính vault của mình.
+- **Thiết kế theo hướng quen tay hơn là thông minh.** Hai mũi tên `‹ ›` nằm bên TRÁI tên file, đúng chỗ mọi trình duyệt đặt nó, nên không phải học. Phím `Alt` + `←` / `→` như trình duyệt. Chuột có nút lùi/tiến bên hông dùng được luôn (chặn ở `mousedown` để không lùi cả trang dashboard, mất luôn hội thoại đang mở).
+- **Tooltip gọi TÊN file sẽ tới**, không phải chữ "Lùi" trơn: "Lùi về: Bát Giác Offer.md". Đi sâu bốn năm tầng liên kết thì nhớ mình từ đâu tới là chuyện không dễ, nên nút nói hộ trước khi bấm.
+- **Hết chỗ đi thì nút MỜ đi chứ không biến mất.** Nút ẩn hiện làm thanh tiêu đề nhảy, và người dùng không bao giờ học được là có nút đó. Nút mờ vẫn nói được vì sao bấm không ăn.
+- Vệt đường đi sống qua lần đóng trình sửa (đóng ra chat về chính note đó rồi mở lại là luồng thường gặp nhất), tự xoá khi đổi brain, tự sửa theo khi đổi tên file và tự rút khi xoá file - ba ca đều dẫn tới "bấm Lùi rơi vào đường dẫn không còn tồn tại". Đang đứng giữa vệt mà mở note mới thì nhánh tiến bị cắt, y như trình duyệt.
+
+### Sửa lỗi
+- **Rời một file đang sửa dở thì thôi mất chữ.** Bấm `[[wikilink]]`, bấm file khác trong cây, hay bấm Lùi/Tiến: nếu có sửa mà chưa bấm Lưu thì Javis lưu trước rồi mới đi. Lỗi này có từ trước, nhưng nút Lùi/Tiến làm chuyện rời file xảy ra thường xuyên hơn hẳn nên không vá thì nó thành cái bẫy.
+- **Lưu hỏng thì Ở LẠI**, không đi tiếp, và lỗi hiện ngay trên nút Lưu. Đi tiếp lúc đó là vứt bài người ta vừa viết mà không nói một câu nào.
+- **Chỉ ĐỌC rồi rời đi thì không ghi lại gì.** Mốc so sánh "đã sửa gì chưa" lấy từ chính khung soạn lúc vừa mở, không phải chữ thô đọc từ đĩa: bản render WYSIWYG đổi ngược thành markdown luôn lệch đôi chỗ so với file gốc (chuẩn hoá dấu, xuống dòng), nên so với file gốc thì mở ra đọc một cái cũng bị tính là có sửa và Javis sẽ âm thầm ghi đè định dạng của file đó.
+
+### Cải thiện
+- Tài liệu: [Quản lý tệp tin](docs/05-quan-ly-tep-tin.md) thêm mục "Lùi về / Tiến lên giữa các note".
+
+## [0.26.15] - 2026-08-10
+### Thêm mới
+- **Ra lệnh bằng ghi âm trên Zalo**, y như Telegram ở bản trước. Bấm giữ micro nói một câu, Javis nghe thành chữ rồi làm như bạn gõ tay. **Dùng chung một key Groq**: đã đấu cho Telegram thì Zalo chạy luôn, không phải làm gì thêm.
+- Việc có tác động ra ngoài (gửi tin, đăng bài, đặt lịch, tiêu tiền, sửa file) vẫn đọc lại "Em nghe: ..." rồi hỏi xác nhận. File ghi âm không lưu vào `inbox/`.
+- Phần nghe nằm ở `server/stt.py` từ bản trước, không biết Telegram hay Zalo là gì, nên bản này chỉ nối dây chứ không viết bản thứ hai. Dòng dặn engine cũng chuyển hẳn vào đó để hai kênh không trôi lệch câu chữ.
+
+### Sửa lỗi
+- **Khác Telegram đúng một khâu, và đó là khâu rủi ro nhất: Zalo KHÔNG có `getFile`.** Cả bộ method Zalo công bố không có cái nào tải file, nên đường duy nhất tới file ghi âm là một URL nằm sẵn trong dữ liệu tin nhắn - mà khuôn dữ liệu của `message.voice.received` thì Zalo bỏ trống trong tài liệu. Nên Javis thử một loạt tên trường (`voice_url`, `voice`, `audio_url`, `audio`, `file_url`, `url`, kể cả dạng lồng `{"url": ...}`) thay vì cược vào một cái rồi im lặng bỏ hết tin thoại khi cược sai.
+- **Trượt hết thì kêu ra, không im.** Bot nói thẳng với người gửi là không tải được file ghi âm, và server ghi MỘT dòng `[zalo voice] không tìm ra đường dẫn file thoại trong payload` kèm mẫu dữ liệu thật - lần chạy đầu tiên tự nói cho biết trường tên gì. Kêu một lần cho mỗi phiên bot, không spam log mỗi tin.
+- Hàm moi URL này dùng chung với phần ảnh (trước đây viết lồng trong nhánh ảnh), nên hai loại file không còn hai bản logic trôi lệch nhau.
+
+### Cải thiện
+- Tài liệu: [Kênh Zalo Bot](docs/26-kenh-zalo-bot.md) thêm mục "Ra lệnh bằng ghi âm" kèm cảnh báo về khuôn dữ liệu chưa công bố; [Telegram](docs/11-telegram.md) và [Models & engine](docs/10-models-va-engine.md) cập nhật theo.
+
 ## [0.26.14] - 2026-08-10
 ### Thêm mới
 - **Ra lệnh bằng ghi âm trên Telegram.** Bấm giữ micro nói một câu, Javis nghe thành chữ rồi làm y như bạn gõ tay. Trước đây gửi tin thoại chỉ nhận lại một câu "Javis chưa đọc được loại này, nhờ anh gõ chữ" - tức là cái nút micro to nhất trong Telegram không dùng được, đúng lúc người ta cần nó nhất (đang lái xe, tay bận).
