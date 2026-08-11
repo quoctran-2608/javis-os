@@ -14,6 +14,7 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 - **Fork production có công cụ nhận upstream an toàn.** `python tools/sync_upstream.py` kiểm cây sạch và hai remote, tạo nhánh `sync/upstream-<VERSION>`, merge upstream tại đó và dừng nguyên trạng nếu có conflict.
 
 ### Cải thiện
+- **Visual Brain tách rõ Tri thức, Chủ đề và Toàn bộ ghi chú.** Chế độ Chủ đề dùng tag YAML của Obsidian làm node ảo để gom các trang Wiki, chỉ hiện tag nối từ hai trang trở lên. Catalog, index, log và file hệ thống không còn tạo siêu nút làm méo sơ đồ; trình duyệt từng nhớ chế độ Toàn bộ cũ sẽ trở về Tri thức một lần sau cập nhật.
 - **Kênh cập nhật mặc định chuyển sang `quoctran-2608/javis-os`.** Version check, changelog, Docker compose, GHCR image, metadata và link deploy cùng trỏ về fork production. Có thể đổi bằng `JAVIS_UPDATE_REPO`, `JAVIS_IMAGE_REPO` và `JAVIS_IMAGE`.
 - **Credential ba CLI tách khỏi source và giữ qua update.** Docker có volume riêng cho `~/.claude`, `~/.codex` và `~/.gemini`; thay image, redeploy hoặc rollback không buộc đăng nhập lại.
 - **CI thêm job Windows CLI auth.** Job này cài đúng dependency Windows và canh các hợp đồng đã từng hỏng: đường cài `agy`, pseudo-terminal, URL wrap/PKCE, gửi code và logout.

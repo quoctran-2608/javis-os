@@ -21,7 +21,10 @@ from typing import Callable
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 import config as cfgmod
-from graph_builder import build_graph, _color_for, _top_folder, WIKILINK_RE, _knowledge_file_visible
+from graph_builder import (
+    build_graph, _color_for, _top_folder, WIKILINK_RE,
+    _knowledge_file_visible, _graph_file_visible, _frontmatter_tags,
+)
 
 
 @dataclass
@@ -53,7 +56,7 @@ def _resolve_graph_roots(source: str, path: str = None, scope: str = "all"):
         roots = [_DEPS.vault_path()]
     else:
         roots = [str(_DEPS.default_brain_dir()), _DEPS.vault_path()]
-    return _knowledge_roots(roots) if scope == "knowledge" else roots
+    return _knowledge_roots(roots) if scope in {"knowledge", "topics"} else roots
 
 
 # ============================================================
@@ -74,6 +77,8 @@ def _scan_md_mtimes(roots, knowledge_only=False):
                 with os.scandir(dirpath) as it:
                     for entry in it:
                         if entry.name.endswith(".md") and entry.is_file():
+                            if not _graph_file_visible(entry.path, root):
+                                continue
                             if knowledge_only and not _knowledge_file_visible(entry.path, root):
                                 continue
                             try:
@@ -119,6 +124,7 @@ def _node_payload(fpath, roots):
         "t": _born,   # mốc ra đời - node live cũng xếp đúng chỗ trong timelapse
     }
     targets = []
+    content = ""
     try:
         content = Path(fpath).read_text(encoding="utf-8", errors="replace")
         for m in WIKILINK_RE.finditer(content):
@@ -129,6 +135,8 @@ def _node_payload(fpath, roots):
         pass
     # dedup giữ thứ tự
     targets = list(dict.fromkeys(targets))
+    node["kind"] = "note"
+    node["tags"] = _frontmatter_tags(content)
     return node, targets
 
 
@@ -154,7 +162,7 @@ def _make_router() -> APIRouter:
     async def graph(
         source: str = Query("all", description="all | brain | vault"),
         path: str = Query(None, description="Đường dẫn folder tùy ý (ưu tiên nếu có)"),
-        scope: str = Query("all", description="all | knowledge"),
+        scope: str = Query("all", description="all | knowledge | topics"),
         orphans: int = Query(0, description="1 = hiện cả note cô đơn (0 kết nối), như graph view Obsidian"),
     ):
         """Lớp Graphify - dựng đồ thị kết nối note từ wikilink.
@@ -162,7 +170,8 @@ def _make_router() -> APIRouter:
         sang thread, chạy sync trên event loop là đứng cả server (mọi request khác xếp hàng)."""
         return await asyncio.to_thread(
             build_graph, _resolve_graph_roots(source, path, scope),
-            include_orphans=bool(orphans), knowledge_only=scope == "knowledge",
+            include_orphans=bool(orphans), knowledge_only=scope in {"knowledge", "topics"},
+            include_tag_nodes=scope == "topics",
         )
 
     @router.websocket("/ws/graph")
@@ -180,7 +189,7 @@ def _make_router() -> APIRouter:
         await ws.accept()
         qp = ws.query_params
         scope = qp.get("scope", "all")
-        knowledge_only = scope == "knowledge"
+        knowledge_only = scope in {"knowledge", "topics"}
         roots = _resolve_graph_roots(qp.get("source", "all"), qp.get("path") or None, scope)
         known = await asyncio.to_thread(_scan_md_mtimes, roots, knowledge_only)   # baseline lúc kết nối → chỉ báo cái sinh ra sau đó
         stop = asyncio.Event()
@@ -254,6 +263,11 @@ def _make_router() -> APIRouter:
                             changed.append((fp, False))
                         known[fp] = mt
                 for fp, is_new in changed[:80]:               # chặn burst
+                    if scope == "topics":
+                        # Tag có thể được thêm, xoá hoặc đổi tên. Dựng lại graph để loại đúng
+                        # node tag cũ và cập nhật số cạnh, thay vì chỉ cộng thêm node mới.
+                        await ws.send_text(json.dumps({"type": "graph_refresh"}, ensure_ascii=False))
+                        break
                     node, targets = await asyncio.to_thread(_node_payload, fp, roots)
                     await ws.send_text(json.dumps({
                         "type": "graph_add", "node": node,

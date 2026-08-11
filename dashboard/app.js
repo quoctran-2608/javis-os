@@ -785,7 +785,12 @@ async function initGraph() {
 
 // Click node trong graph → Javis mở & thao tác note đó trong vault
 window.onGraphNodeClick = (node) => {
-  if (!node || !node.path) return;
+  if (!node) return;
+  if (node.kind === "tag") {
+    if (javisGraph && typeof javisGraph.selectNode === "function") javisGraph.selectNode(node.id);
+    return;
+  }
+  if (!node.path) return;
   const brainRel = (node.path || "").split("/").slice(1).join("/") || node.path;   // bỏ đoạn gốc → path tương đối brain
   if (typeof window.JavisOpenNote === "function") window.JavisOpenNote(brainRel);   // mở editor cây (WYSIWYG + công cụ)
   else openNodePopup(node);   // dự phòng nếu editor cây chưa sẵn
@@ -881,7 +886,9 @@ async function reloadGraph() {
   try {
     const data = await javisGraph.load(query);
     const stats = data.stats || {};
-    graphStats.textContent = `${stats.total_notes} note · ${stats.total_links} kết nối`;
+    graphStats.textContent = stats.tag_nodes
+      ? `${stats.note_nodes} note · ${stats.tag_nodes} chủ đề · ${stats.total_links} kết nối`
+      : `${stats.total_notes} note · ${stats.total_links} kết nối`;
     renderConceptLabels(data.categories || [], stats.total_notes || 0);
   } catch (e) { graphStats.textContent = "Lỗi: " + e.message; }
 }
@@ -906,9 +913,18 @@ graphSource.addEventListener("change", () => {
   loadBrainStats(); // agent/skill/workflow theo vault
   checkVault();     // kiểm tra cấu trúc vault mới chọn
 });
-graphScope.value = localStorage.getItem("javis.graphScope") === "all" ? "all" : "knowledge";
+{
+  const scopeVersion = "2";
+  const savedScope = localStorage.getItem("javis.graphScope");
+  const savedVersion = localStorage.getItem("javis.graphScopeVersion");
+  graphScope.value = savedVersion === scopeVersion && ["knowledge", "topics", "all"].includes(savedScope)
+    ? savedScope : "knowledge";
+  localStorage.setItem("javis.graphScopeVersion", scopeVersion);
+  localStorage.setItem("javis.graphScope", graphScope.value);
+}
 graphScope.addEventListener("change", () => {
   localStorage.setItem("javis.graphScope", graphScope.value);
+  localStorage.setItem("javis.graphScopeVersion", "2");
   reloadGraph();
   connectGraphWatch();
 });
@@ -929,6 +945,7 @@ function connectGraphWatch() {
   graphWs = new WebSocket(`${WS_ORIGIN}/ws/graph?${q}`);
   graphWs.onmessage = (e) => {
     let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+    if (m.type === "graph_refresh") { reloadGraph(); return; }
     if (m.type !== "graph_add" || !javisGraph) return;
     const r = javisGraph.addOrUpdate(m.node, m.linkTargets, m.isNew);
     if (r && r.created) {

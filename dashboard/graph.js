@@ -148,6 +148,7 @@ class JavisGraph {
     this._fitted = false;
     this._t0 = 0;
     this._hoverId = null;
+    this._selectedId = null;
     this._nbrs = new Set();
     this._catFilter = null;
     window.__javisGraph = this;
@@ -162,6 +163,15 @@ class JavisGraph {
       ? new Set([...nodes].sort((a, b) => (b.links || 0) - (a.links || 0)).slice(0, 4).map(n => n.id))
       : null;
     nodes.forEach(n => {
+      if (n.kind === "tag") {
+        n.__cat = "chủ đề";
+        n.__catIdx = -1;
+        n.__c = "#f0c853";
+        n.__r = 5 + Math.sqrt(Math.min(40, n.links || 0)) * 1.8;
+        n.__ph = (_hash(n.id) % 628) / 100;
+        n.__hub = true;
+        return;
+      }
       const cat = _catOf(n);
       // Gán màu TUẦN TỰ theo danh mục (mỗi danh mục một màu khác nhau) - không hash để tránh trùng.
       // Lưu CHỈ SỐ để đổi tông chỉ cần tra lại bảng màu khác, khỏi gán lại từ đầu.
@@ -180,11 +190,14 @@ class JavisGraph {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Không tải được đồ thị (${res.status})`);
     const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+    this._selectedId = null;
+    this._hoverId = null;
+    this._nbrs = new Set();
     this._catMap = null;                     // gán lại màu danh mục tươi cho mỗi lần nạp
     this._prep(nodes);
     window.__javisCatIdx = this._catMap;                    // danh mục → chỉ số
     window.__javisCatMap = _mapFromIdx(this._catMap);       // để nhãn danh mục (app.js) tô chữ khớp màu node
-    const links = (data.edges || []).map(e => ({ source: e.source, target: e.target }));
+    const links = (data.edges || []).map(e => ({ source: e.source, target: e.target, kind: e.kind || "wikilink" }));
 
     if (!this.graph) {
       if (!window.ForceGraph) throw new Error("Thư viện đồ thị 2D chưa tải (kiểm tra mạng)");
@@ -198,35 +211,31 @@ class JavisGraph {
         .warmupTicks(24)
         .cooldownTime(5000)
         .linkColor(l => {
-          if (self._hoverId != null) {
+          const activeId = self._hoverId || self._selectedId;
+          if (activeId != null) {
             const s = (l.source && l.source.id) || l.source, t = (l.target && l.target.id) || l.target;
-            return (s === self._hoverId || t === self._hoverId) ? INK.linkOn : INK.linkOff;
+            return (s === activeId || t === activeId) ? INK.linkOn : INK.linkOff;
           }
-          return INK.linkIdle;                      // dây nối mờ hơn (đỡ đậm)
+          return l.kind === "tag" ? "rgba(240,200,83,0.16)" : INK.linkIdle;
         })
         .linkWidth(l => {
-          if (self._hoverId != null) {
+          const activeId = self._hoverId || self._selectedId;
+          if (activeId != null) {
             const s = (l.source && l.source.id) || l.source, t = (l.target && l.target.id) || l.target;
-            if (s === self._hoverId || t === self._hoverId) return 1;   // hover cũng mảnh (trước 1.8)
+            if (s === activeId || t === activeId) return 1;
           }
-          return 0.4;                               // dây mảnh hơn
+          return l.kind === "tag" ? 0.65 : 0.4;
         })
         .nodeCanvasObjectMode(() => "replace")
         .nodeCanvasObject((n, ctx, scale) => self._drawNode(n, ctx, scale))
         .onNodeHover(n => {
           self._hoverId = n ? n.id : null;
-          self._nbrs = new Set();
-          if (n) {
-            self.graph.graphData().links.forEach(l => {
-              const s = (l.source && l.source.id) || l.source, t = (l.target && l.target.id) || l.target;
-              if (s === n.id) self._nbrs.add(t); else if (t === n.id) self._nbrs.add(s);
-            });
-          }
+          self._syncNeighbors();
           self.container.style.cursor = n ? "pointer" : "grab";
         })
         .onNodeClick(n => { if (window.onGraphNodeClick) window.onGraphNodeClick(n); })   // chỉ mở note, KHÔNG lia camera
         .onNodeDragEnd(n => { n.fx = null; n.fy = null; })                                // thả kéo → node tự trôi về
-        .onBackgroundClick(() => { self._catFilter = null; })                            // KHÔNG recenter → bấm được node viền
+        .onBackgroundClick(() => { self._catFilter = null; self._selectedId = null; self._syncNeighbors(); })
         .minZoom(0.05).maxZoom(3)                                                         // min nâng lên = mức fit sau khi lắng
         .onEngineStop(() => {
           if (self._fitted) return;
@@ -254,8 +263,9 @@ class JavisGraph {
     if (n.x == null || n.y == null) return;
     const t = (typeof performance !== "undefined" ? performance.now() : Date.now());
     const ent = this._t0 ? Math.min(1, (t - this._t0) / 700) : 1;      // fade-in khi mở
-    const hovering = this._hoverId != null;
-    const isHover = n.id === this._hoverId;
+    const activeId = this._hoverId || this._selectedId;
+    const hovering = activeId != null;
+    const isHover = n.id === activeId;
     const isNbr = hovering && this._nbrs.has(n.id);
     const catDim = this._catFilter && n.__cat !== this._catFilter && !isHover && !isNbr;
     const dim = (hovering && !isHover && !isNbr) || catDim;
@@ -273,14 +283,21 @@ class JavisGraph {
     ctx.drawImage(spr, n.x - gsz / 2, n.y - gsz / 2, gsz, gsz);
     // Lõi đặc
     ctx.globalAlpha = Math.min(1, alpha + 0.15);
-    ctx.beginPath(); ctx.arc(n.x, n.y, r * 0.5, 0, Math.PI * 2);
+    ctx.beginPath();
+    if (n.kind === "tag") {
+      const rr = r * 0.62;
+      ctx.moveTo(n.x, n.y - rr); ctx.lineTo(n.x + rr, n.y);
+      ctx.lineTo(n.x, n.y + rr); ctx.lineTo(n.x - rr, n.y); ctx.closePath();
+    } else {
+      ctx.arc(n.x, n.y, r * 0.5, 0, Math.PI * 2);
+    }
     ctx.fillStyle = isHover ? INK.hoverCore : (n.__c || INK.fallback);
     ctx.fill();
     ctx.globalAlpha = 1;
 
     // Nhãn: CHỈ note đang trỏ (như Obsidian). KHÔNG hiện-hết-khi-zoom (vừa loạn, vừa làm zoom khựng
     // do phải vẽ hàng trăm chữ mỗi frame).
-    const showLabel = isHover;
+    const showLabel = isHover || n.kind === "tag";
     if (showLabel && n.label) {
       const la = (dim ? 0.16 : (isHover ? 1 : 0.85)) * ent;
       const fs = Math.max(9, 11 / scale);
@@ -296,6 +313,23 @@ class JavisGraph {
     }
   }
 
+  _syncNeighbors() {
+    this._nbrs = new Set();
+    const activeId = this._hoverId || this._selectedId;
+    if (!activeId || !this.graph) return;
+    this.graph.graphData().links.forEach(l => {
+      const s = (l.source && l.source.id) || l.source;
+      const t = (l.target && l.target.id) || l.target;
+      if (s === activeId) this._nbrs.add(t);
+      else if (t === activeId) this._nbrs.add(s);
+    });
+  }
+
+  selectNode(id) {
+    this._selectedId = this._selectedId === id ? null : id;
+    this._syncNeighbors();
+  }
+
   // Đổi tông: gán lại màu node theo bảng mới rồi ép vẽ lại một frame.
   // Không đụng graphData().nodes/links nên d3-force không bị khởi động lại - đồ thị
   // đứng yên tại chỗ, chỉ đổi màu. (Đổ lại graphData sẽ làm mạng giật và fit lại camera.)
@@ -303,6 +337,7 @@ class JavisGraph {
     if (!this.graph) return;
     const d = this.graph.graphData();
     (d.nodes || []).forEach(n => {
+      if (n.kind === "tag") { n.__c = "#f0c853"; n.color = n.__c; return; }
       if (n.__catIdx != null) n.__c = CAT_COLORS[n.__catIdx % CAT_COLORS.length];
       if (n.color) n.color = n.__c || n.color;
     });
