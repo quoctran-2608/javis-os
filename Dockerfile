@@ -32,9 +32,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 # System deps: ca-certs (TLS), git (Claude tools), ripgrep (fast search used by
 # Claude's Grep), ffmpeg (edge-tts mp3), curl, tini (PID-1 reaper for the node
-# subprocesses Claude spawns).
+# subprocesses Claude spawns). qemu-aarch64 + ARM64 libc là fallback cho
+# Antigravity trên VPS x86/QEMU cũ không expose PCLMUL/SSE4.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl git ripgrep ffmpeg tini \
+        ca-certificates curl git ripgrep ffmpeg tini qemu-user libc6-arm64-cross \
+    && find /usr/bin -maxdepth 1 -type f -name 'qemu-*' ! -name qemu-aarch64 -delete \
     && rm -rf /var/lib/apt/lists/*
 
 # Node 22 LTS from stage 1 (npm/npx are symlinks → recreate on PATH).
@@ -54,13 +56,22 @@ RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" \
 RUN (npm install -g @openai/codex && npm cache clean --force && codex --version) \
     || echo "[build] codex cài KHÔNG thành công - provider ChatGPT subscription sẽ không dùng được (các provider khác vẫn chạy)."
 
-# Google Antigravity CLI. Bootstrapper chính thức tự chọn kiến trúc, tải manifest và kiểm SHA-512.
-# Cài vào /usr/local/bin để user non-root chạy được. Best-effort như Codex: upstream lỗi không
-# được làm cả image Javis mất khả năng chạy Claude/API.
-RUN (curl -fsSL https://antigravity.google/cli/install.sh -o /tmp/install-antigravity.sh \
-     && bash /tmp/install-antigravity.sh --dir /usr/local/bin \
-     && agy --version) \
-    || echo "[build] Antigravity CLI cài KHÔNG thành công - provider Antigravity sẽ không dùng được."
+# Google Antigravity CLI. Binary x86 chính thức đòi PCLMUL/SSE4; một số VPS QEMU
+# không expose PCLMUL nên chết SIGILL trước OAuth. Cài song song binary ARM64
+# chính thức và wrapper tự fallback qua qemu-aarch64. Cả hai archive đều được
+# manifest chính thức kiểm SHA-512; build còn smoke-test cả native lẫn emulation.
+COPY tools/install_antigravity_compat.py /tmp/install-antigravity-compat.py
+COPY system/agy-compatible.sh /tmp/agy-compatible.sh
+RUN mkdir -p /usr/local/lib/javis-antigravity/native /usr/local/lib/javis-antigravity/arm64 \
+    && curl -fsSL https://antigravity.google/cli/install.sh -o /tmp/install-antigravity.sh \
+    && bash /tmp/install-antigravity.sh --dir /usr/local/lib/javis-antigravity/native \
+    && python /tmp/install-antigravity-compat.py \
+         --native /usr/local/lib/javis-antigravity/native/agy \
+         --destination /usr/local/lib/javis-antigravity/arm64/agy \
+    && install -m 0755 /tmp/agy-compatible.sh /usr/local/bin/agy \
+    && agy --version \
+    && JAVIS_ANTIGRAVITY_FORCE_EMULATION=1 agy --version \
+    && rm -f /tmp/install-antigravity.sh /tmp/install-antigravity-compat.py /tmp/agy-compatible.sh
 
 WORKDIR /app
 

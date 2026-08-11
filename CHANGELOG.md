@@ -4,6 +4,18 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 Định dạng: mỗi phiên bản là một khối `## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
 
+## [0.27.2] - 2026-08-11
+### Sửa lỗi
+- **Antigravity chạy được trên VPS x86/QEMU thiếu `pclmulqdq`.** Binary x86-64 chính thức của Google `agy 1.1.12` được build với PCLMUL, SSE4.1, SSE4.2, POPCNT và các tập lệnh x86 khác; CPU ảo cũ thiếu một cờ sẽ chết `SIGILL` trước cả bước OAuth. Image Javis nay cài song song binary ARM64 chính thức và tự chạy nó qua `qemu-aarch64` khi CPU x86 không đủ cờ.
+- **Fallback áp dụng cho toàn bộ engine, không chỉ nút đăng nhập.** Cùng wrapper `/usr/local/bin/agy` phục vụ OAuth, `agy models`, chat stream, resume và MCP. CPU mới vẫn chạy native; CPU cũ tự chuyển sang ARM64-QEMU mà không đổi volume credential hay thao tác người dùng.
+- **Thông báo `go/sigill-fail-fast` nay gọi đúng nguyên nhân.** Nếu chạy ngoài image có fallback, Javis nói rõ CPU thiếu PCLMUL và yêu cầu cập nhật image hoặc đổi CPU, thay vì báo chung rằng CLI dừng trước khi phát link.
+
+### Bảo mật
+- Binary ARM64 được tải từ manifest chính thức của Antigravity, kiểm SHA-512 trước khi cài và bắt buộc cùng version với binary native. Docker build smoke-test cả đường native lẫn đường giả lập trước khi publish image.
+
+### Kiểm thử
+- Wrapper có test CPU đủ cờ, thiếu PCLMUL và ép emulation; installer có test checksum đúng/sai. Luồng OAuth thật qua binary ARM64 `1.1.12` + `qemu-aarch64` trả URL PKCE nguyên vẹn trong 3,75 giây.
+
 ## [0.27.1] - 2026-08-11
 ### Sửa lỗi
 - **Nút Đăng nhập Google của Antigravity nay trả đúng link trên VPS/Linux.** `agy 1.1.12` in thêm dòng `Waiting for authentication...` giữa URL OAuth và câu nhắc dán code. Parser cũ ghép mọi khoảng trắng trong block nên nối cả dòng trạng thái vào cuối URL; Windows dùng output khác nên không dính lỗi này. Parser nay dừng đúng trước dòng trạng thái và chỉ trả URL khi đủ `state`, `code_challenge` và `redirect_uri`.

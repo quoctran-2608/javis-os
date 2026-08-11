@@ -24,7 +24,20 @@ publish = (ROOT / ".github" / "workflows" / "docker-publish.yml").read_text(
 requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
 version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
-check("release là 0.27.1", version == "0.27.1")
+check("release là 0.27.2", version == "0.27.2")
+
+dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+compat = (ROOT / "system" / "agy-compatible.sh").read_text(encoding="utf-8")
+check("Docker image cài QEMU ARM64 fallback cho Antigravity",
+      "qemu-user libc6-arm64-cross" in dockerfile)
+check("Docker build smoke-test đường Antigravity emulation",
+      "JAVIS_ANTIGRAVITY_FORCE_EMULATION=1 agy --version" in dockerfile)
+agy_block = dockerfile[
+    dockerfile.index("COPY tools/install_antigravity_compat.py"):
+    dockerfile.index("WORKDIR /app")
+]
+check("Docker build fail-closed nếu fallback Antigravity hỏng", "|| echo" not in agy_block)
+check("wrapper tự bắt CPU thiếu PCLMUL", "pclmulqdq" in compat and "qemu-aarch64" in compat)
 check("backend mặc định kiểm version từ fork",
       '"quoctran-2608/javis-os"' in main and "JAVIS_UPDATE_REPO" in main)
 check("backend công bố image repo cho UI rollback",

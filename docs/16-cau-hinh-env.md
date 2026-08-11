@@ -126,6 +126,7 @@ Lưu ý: hai biến TTS này áp cho giọng Edge TTS miễn phí mặc định.
 | `JAVIS_CLAUDE_ENGINE` | (Lịch sử) Từ 0.9.37 engine Claude luôn chạy qua Agent SDK chính chủ - biến này không còn tác dụng, đặt `cli`/`sdk-loops` sẽ bị bỏ qua kèm một dòng log | `sdk` | Không cần đụng. Engine Claude trục trặc thì báo lỗi kèm log server. |
 | `JAVIS_CODEX_BIN` | Đường dẫn tuyệt đối tới file thực thi `codex` | Tự dò trong PATH và các chỗ cài quen thuộc | Cài Codex CLI ở nơi lạ mà Javis không tìm ra. |
 | `JAVIS_ANTIGRAVITY_BIN` | Đường dẫn tuyệt đối tới file thực thi `agy` | Tự dò trong PATH, `~/.local/bin` và thư mục cài chính thức | Cài Google Antigravity CLI ở nơi lạ mà Javis không tìm ra. |
+| `JAVIS_ANTIGRAVITY_FORCE_EMULATION` | Ép wrapper Docker chạy binary ARM64 qua QEMU thay vì AGY x86 native | `0`; tự bật khi CPU thiếu PCLMUL/SSE4 | Chẩn đoán fallback trên VPS CPU cũ hoặc smoke-test image. Bình thường không cần đặt. |
 | `JAVIS_ANTIGRAVITY_TIMEOUT` | Trần thời gian cho một lượt print mode Antigravity, tính bằng giây | `600` | Việc dài bị dừng trước khi xong thì tăng. Giá trị nhỏ hơn 30 tự bị nâng lên 30. |
 | `JAVIS_ANTIGRAVITY_TOKEN_FILE` | Đường dẫn file OAuth token của Antigravity | `~/.gemini/antigravity-cli/antigravity-oauth-token` | Chỉ dùng khi môi trường của bạn lưu token file ở chỗ khác. |
 | `CLAUDE_CONFIG_DIR` | Thư mục cấu hình của Claude Code (nơi có `.credentials.json`). Đặt biến này là ĐÈ hẳn, giống hành vi của Claude Code | `~/.claude` | Bạn đã tự đổi thư mục cấu hình Claude Code. |

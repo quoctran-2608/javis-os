@@ -141,6 +141,9 @@ Lấy key ở đâu:
 Javis lưu `conversation_id` riêng của Antigravity trong kho phiên. Lượt sau dùng `--conversation` để resume đúng mạch. MCP Hub được nối qua một proxy stdio nhỏ; token Hub chỉ truyền trong environment của tiến trình, không được ghi vào `mcp_config.json`.
 
 Trong Docker, credential và config Antigravity nằm ở volume `antigravity-auth` gắn vào `/home/javis/.gemini`, nên redeploy/update không làm mất đăng nhập.
+Image Javis còn kèm fallback ARM64-QEMU cho VPS x86 cũ không expose tập lệnh
+`pclmulqdq`: CPU đủ mới chạy `agy` native; CPU thiếu tự chạy binary ARM64 chính
+thức qua `qemu-aarch64`. Không cần đổi cách đăng nhập hay volume.
 - **Google Gemini (API)**: key của Gemini API, lấy ở aistudio.google.com.
 
 ### D. Đặt Main Model (chọn model chính)
@@ -270,6 +273,7 @@ Bạn không cần rời trang Models để đổi model: bấm **Đổi model �
 - **ChatGPT OAuth báo chưa cài Codex CLI**: kênh này cần Codex CLI trên máy. Nếu chưa có, dùng Claude Code hoặc OpenRouter cho ổn định.
 - **Antigravity báo chưa cài CLI**: cài lệnh `agy`, khởi động lại Javis rồi bấm **↻ Kiểm tra lại**.
 - **Antigravity không thấy model**: mở terminal chạy `agy models`. Nếu lệnh yêu cầu đăng nhập, quay lại card và bấm **Đăng nhập Google**. Nếu CLI nằm ở chỗ lạ, đặt `JAVIS_ANTIGRAVITY_BIN`.
+- **Antigravity báo `compiled with pclmul enabled` / `go/sigill-fail-fast`**: CPU ảo của VPS không expose PCLMUL nên binary x86 chính thức chết trước OAuth. Cập nhật image Javis lên bản có fallback ARM64-QEMU. Có thể kiểm trong container bằng `docker compose exec javis agy --version`; không cần đổi VPS nếu lệnh này chạy được.
 
 ## Liên quan
 

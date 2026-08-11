@@ -592,6 +592,11 @@ def _oauth_url_complete(url: str) -> bool:
 
 def _friendly_login_error(text: str) -> str:
     low = (text or "").lower()
+    if "compiled with pclmul enabled" in low or "go/sigill-fail-fast" in low:
+        return (
+            "CPU ảo của VPS thiếu tập lệnh PCLMUL mà binary Antigravity x86 yêu cầu. "
+            "Hãy cập nhật Javis lên image có fallback ARM64-QEMU hoặc đổi loại CPU VPS."
+        )
     if "invalid_grant" in low or "malformed auth code" in low:
         return (
             "Authorization code không hợp lệ hoặc đã hết hạn. "
