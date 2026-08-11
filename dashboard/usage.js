@@ -12,11 +12,14 @@
     ["this_month", "Tháng này"], ["last_month", "Tháng trước"],
     ["last_3_months", "3 tháng"], ["this_year", "Năm nay"],
   ];
-  var PROVS = [["", "Tất cả"], ["claude", "Claude Code"], ["codex", "ChatGPT"], ["api", "API"]];
-  var PROV_LABEL = { claude: "Claude Code", codex: "ChatGPT/Codex", api: "API (OpenRouter...)" };
+  var PROVS = [["", "Tất cả"], ["claude", "Claude Code"], ["codex", "ChatGPT"],
+               ["antigravity", "Antigravity"], ["api", "API"]];
+  var PROV_LABEL = { claude: "Claude Code", codex: "ChatGPT/Codex",
+                     antigravity: "Google Antigravity", api: "API (OpenRouter...)" };
   var SRC_LABEL = { manual: "Bạn gõ tay", javis: "Javis (tự chạy)" };
   var ACT_LABEL = { chat: "Chat", background: "Nền (loop/lịch)", subagent: "Subagent", manual: "Thủ công" };
-  var PROV_COLOR = { claude: "var(--accent)", codex: "var(--green)", api: "var(--link-ink)" };
+  var PROV_COLOR = { claude: "var(--accent)", codex: "var(--green)",
+                     antigravity: "var(--accent2,var(--accent))", api: "var(--link-ink)" };
 
   var state = { period: "this_month", provider: "", el: null, busy: false, muc: null, toast: "" };
 

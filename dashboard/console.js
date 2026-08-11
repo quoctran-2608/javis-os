@@ -409,7 +409,7 @@
   }
   const _uzTok = (n) => { n = +n || 0; if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + "M"; if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + "k"; return "" + n; };
   const _uzCost = (c) => (+c > 0 ? "$" + (+c).toFixed(+c < 0.01 ? 4 : 2) : "-");
-  const _UZ_PROV = { cli: "Claude Code", codex: "ChatGPT", openrouter: "OpenRouter", openai: "OpenAI", "anthropic-api": "Anthropic" };
+  const _UZ_PROV = { cli: "Claude Code", codex: "ChatGPT", antigravity: "Antigravity", openrouter: "OpenRouter", openai: "OpenAI", "anthropic-api": "Anthropic" };
   const _uzModel = (m) => (m || "").split("/").pop().replace(/^(claude-|gpt-)/, "").slice(0, 26);
 
   async function renderUsage(el) {
@@ -2631,9 +2631,11 @@
     // Phải hỏi /claude/status mới biết Claude Code có đăng nhập thật không: nó không có
     // key_field nên server luôn trả configured=true, tin theo đó là Claude chưa đăng nhập vẫn
     // nằm chễm chệ trên cùng. Một request cục bộ, rẻ.
-    let claudeOn = false;
+    let claudeOn = false, antigravityOn = false;
     try { claudeOn = !!(await (await fetch("/claude/status")).json()).connected; } catch (e) {}
-    const provOn = (p) => (p.kind === "cli" ? claudeOn : !!p.configured);
+    try { antigravityOn = !!(await (await fetch("/antigravity/status")).json()).connected; } catch (e) {}
+    const provOn = (p) => (p.kind === "cli" ? claudeOn
+      : p.kind === "agy" ? antigravityOn : !!p.configured);
     const provList = providers.map((p, i) => ({ p, i }))
       .sort((a, b) => (provOn(b.p) - provOn(a.p)) || (a.i - b.i))
       .map(x => x.p);
@@ -2697,6 +2699,19 @@
           <div class="prov-action" id="cliAction"></div>
         </div>`;
       }
+      if (p.kind === "agy") {
+        return `<div class="prov-card ${p.is_main ? "main" : ""}">
+          <div class="prov-head">
+            <span class="prov-shield ${on ? "on" : ""}">${_shield(on)}</span>
+            <div class="prov-info">
+              <div class="prov-name">${esc(p.label)} <span class="prov-kind">Agent CLI · MCP</span></div>
+              <div class="prov-status" id="agyStatus">đang kiểm tra…</div>
+            </div>
+            ${p.is_main ? '<span class="prov-badge">MAIN</span>' : ""}
+          </div>
+          <div class="prov-action" id="agyAction"></div>
+        </div>`;
+      }
       const masked = (m[KEYFIELD[p.id]] || "").slice(-4);
       return `<div class="prov-card ${p.is_main ? "main" : ""}">
         ${provHead(p, on, p.kind === "cli" ? "MCP/skill" : "MCP Javis", (on ? "● Đã kết nối" : "○ Chưa kết nối") + " · " + p.models.length + " model")}
@@ -2713,6 +2728,7 @@
           <div class="gcard-top"><span class="gcard-name">${esc(main.model || "-")}</span><span class="gcard-tag">${esc(mainP.label || main.provider || "")}</span></div>
           <div class="gcard-meta">${mainP.kind === "cli" ? "Qua Claude Code - MCP Javis + skill + loop + chạy lệnh máy"
             : mainP.kind === "oauth" ? "Qua Codex - MCP Javis + skill + loop + chạy lệnh máy"
+            : mainP.kind === "agy" ? "Qua Antigravity CLI - agent native + MCP Javis + chạy lệnh máy"
             : mainP.kind === "api" ? "Gọi API thẳng - MCP Javis + skill + loop (không chạy lệnh máy)" : ""}</div>
           <button class="gcard-btn" id="mdChange">Đổi model ▾</button>
         </div>
@@ -2736,7 +2752,7 @@
             </div>
           </div>
           ${auxReady ? "" : `<div class="aux-note warn">${WARN_ICON} Nhà cung cấp này chưa kết nối - việc nền sẽ tự dùng lại Claude.</div>`}
-          <div class="aux-note">Claude Code và Codex chạy được lệnh máy. Model API chỉ đọc/ghi qua vault - hợp việc đọc, tổng hợp, ghi chú.</div>
+          <div class="aux-note">Claude Code, Codex và Antigravity chạy được lệnh máy. Model API chỉ đọc/ghi qua vault - hợp việc đọc, tổng hợp, ghi chú.</div>
         </div>
       </div>
       <div class="cview-section">
@@ -2794,6 +2810,7 @@
       renderModels(el);
     };
     refreshClaudeCard(el);   // nạp trạng thái đăng nhập Claude Code (bất đồng bộ)
+    refreshAntigravityCard(el);
   }
 
   // ---- Card Claude Code: status + login/logout (giống OpenAI OAuth) ----
@@ -2868,6 +2885,96 @@
       catch (e) { if (m2) m2.textContent = "Lỗi mạng."; return; }
       if (rr.ok) { stopped = true; refreshClaudeCard(el); }
       else if (m2) m2.innerHTML = Icons.warn(rr.error || "Code sai, thử lại.");
+    };
+  }
+
+  // ---- Card Google Antigravity CLI: Google Sign-In headless ngay trên Models ----
+  async function refreshAntigravityCard(el) {
+    const st = el.querySelector("#agyStatus"), act = el.querySelector("#agyAction");
+    if (!st || !act) return;
+    let d;
+    try { d = await (await fetch("/antigravity/status")).json(); }
+    catch (e) { st.textContent = "không kiểm tra được"; return; }
+    if (d.connected) {
+      st.className = "prov-status on";
+      st.textContent = "● Đã kết nối" + (d.auth_method ? " · " + d.auth_method : "");
+      act.innerHTML = `<button class="gcard-btn ghost" id="agyLogout">Ngắt</button>
+        <button class="gcard-btn ghost" id="agyRecheck">↻ Tải lại model</button>`;
+      el.querySelector("#agyLogout").onclick = async () => {
+        const b = el.querySelector("#agyLogout"); b.disabled = true; b.textContent = "Đang ngắt…";
+        st.className = "prov-status";
+        st.textContent = "Đang xóa phiên đăng nhập…";
+        try {
+          const r = await (await fetch("/antigravity/logout", { method: "POST" })).json();
+          if (!r.ok) {
+            b.disabled = false; b.textContent = "Ngắt";
+            st.className = "prov-status";
+            st.textContent = r.error || "Không ngắt được Antigravity.";
+            return;
+          }
+        } catch (e) {
+          b.disabled = false; b.textContent = "Ngắt"; st.textContent = "Lỗi mạng."; return;
+        }
+        st.textContent = "○ Đã ngắt kết nối";
+        await renderModels(el);
+      };
+      el.querySelector("#agyRecheck").onclick = async () => {
+        try { await fetch("/provider/models?provider=antigravity-cli&refresh=1"); } catch (e) {}
+        renderModels(el);
+      };
+    } else {
+      st.className = "prov-status";
+      st.textContent = "○ " + (d.error || "Chưa đăng nhập");
+      act.innerHTML = `
+        <button class="gcard-btn" id="agyLogin">Đăng nhập Google</button>
+        <button class="gcard-btn ghost" id="agyRecheck">↻ Kiểm tra lại</button>
+        <span id="agyMsg" class="gcard-meta" style="margin-left:10px;flex:1"></span>
+        <div class="prov-note" style="margin-top:8px;line-height:1.6">
+          Bấm <b>Đăng nhập Google</b>, mở link, rồi dán authorization code vào đây.
+          Chạy được cả trên VPS. CLI cần được cài bằng lệnh <code>agy</code>.
+        </div>`;
+      el.querySelector("#agyLogin").onclick = () => startAntigravityLogin(el);
+      el.querySelector("#agyRecheck").onclick = () => refreshAntigravityCard(el);
+    }
+  }
+
+  async function startAntigravityLogin(el) {
+    const act = el.querySelector("#agyAction");
+    const msg = el.querySelector("#agyMsg");
+    if (msg) msg.textContent = "Đang lấy link Google Sign-In…";
+    let r;
+    try { r = await (await fetch("/antigravity/login-start", { method: "POST" })).json(); }
+    catch (e) { if (msg) msg.textContent = "Lỗi mạng."; return; }
+    if (!r.ok) { if (msg) msg.innerHTML = Icons.warn(r.error || "Không bắt đầu được đăng nhập."); return; }
+    if (r.done) { renderModels(el); return; }
+    if (act) act.innerHTML = `
+      <div class="prov-note" style="line-height:1.7">
+        <b>1)</b> Mở link Google này:<br>
+        <a href="${esc(safeHref(r.url))}" target="_blank" rel="noopener" style="color:var(--link-ink);word-break:break-all">${esc(r.url || "")}</a><br>
+        <b>2)</b> Đăng nhập xong, copy authorization code và dán vào đây:
+        <div style="margin-top:6px;display:flex;gap:8px;max-width:620px">
+          <input class="js-input" id="agyCode" placeholder="Dán authorization code" style="flex:1">
+          <button class="gcard-btn" id="agyCodeBtn">Xác nhận</button>
+        </div>
+        <span id="agyMsg2" class="gcard-meta"></span>
+      </div>`;
+    const btn = el.querySelector("#agyCodeBtn"), m2 = el.querySelector("#agyMsg2");
+    if (btn) btn.onclick = async () => {
+      const code = (el.querySelector("#agyCode").value || "").trim();
+      if (!code) { el.querySelector("#agyCode").focus(); return; }
+      btn.disabled = true; if (m2) m2.textContent = "Đang xác nhận…";
+      const fd = new FormData(); fd.append("code", code);
+      let result;
+      try { result = await (await fetch("/antigravity/login-code", { method: "POST", body: fd })).json(); }
+      catch (e) { if (m2) m2.textContent = "Lỗi mạng."; btn.disabled = false; return; }
+      if (result.ok) renderModels(el);
+      else {
+        if (m2) m2.innerHTML = Icons.warn(result.error || "Code không hợp lệ.")
+          + (result.restart ? ` <button class="gcard-btn ghost" id="agyRestart">Lấy link mới</button>` : "");
+        btn.disabled = false;
+        const restart = el.querySelector("#agyRestart");
+        if (restart) restart.onclick = () => startAntigravityLogin(el);
+      }
     };
   }
 
@@ -2960,7 +3067,7 @@
       loadingProv = pid; draw();
       let res = null;
       try {
-        const force = pid === "openai-oauth" ? "&refresh=1" : "";
+        const force = (pid === "openai-oauth" || pid === "antigravity-cli") ? "&refresh=1" : "";
         res = await (await fetch("/provider/models?provider=" + encodeURIComponent(pid) + force)).json();
       } catch (e) {}
       const stat = (providers.find(x => x.id === pid) || {}).models || [];
@@ -4112,7 +4219,7 @@
     const stripC2pa = !!((s.image || {}).strip_c2pa);
     const mainProviderId = model.main?.provider || (model.engine === "openrouter" ? "openrouter" : "anthropic-cli");
     const mainProvider = (model.providers || []).find(p => p.id === mainProviderId);
-    const engine = mainProvider?.label || ({ "openrouter": "OpenRouter", "openai": "OpenAI API", "openai-oauth": "ChatGPT OAuth", "anthropic-cli": "Claude CLI" }[mainProviderId] || mainProviderId);
+    const engine = mainProvider?.label || ({ "openrouter": "OpenRouter", "openai": "OpenAI API", "openai-oauth": "ChatGPT OAuth", "anthropic-cli": "Claude CLI", "antigravity-cli": "Antigravity CLI" }[mainProviderId] || mainProviderId);
     const currentModel = model.main?.model || (mainProviderId === "openrouter" ? model.openrouter_model : model.claude_model) || "Mặc định";
     const opt = (val, label, cur) => `<option value="${esc(val)}"${val === cur ? " selected" : ""}>${esc(label)}</option>`;
     const oaVoices = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"];

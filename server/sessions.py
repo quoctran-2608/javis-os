@@ -16,6 +16,7 @@ Phân biệt 3 loại id:
   - conv id (uuid hex)  : phiên hội thoại dashboard quản lý (engine-agnostic).
   - cli_session_id      : session_id RIÊNG của Claude CLI (để --resume).
   - codex_thread_id     : thread_id RIÊNG của Codex CLI/OpenAI OAuth (để `exec resume`).
+  - antigravity_conversation_id: conversation_id RIÊNG của Antigravity CLI.
 """
 from __future__ import annotations
 
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     channel        TEXT NOT NULL DEFAULT 'web',
     cli_session_id TEXT,
     codex_thread_id TEXT,
+    antigravity_conversation_id TEXT,
     created_at     REAL NOT NULL,
     updated_at     REAL NOT NULL,
     msg_count      INTEGER NOT NULL DEFAULT 0,
@@ -241,6 +243,7 @@ class SessionStore:
             # Migration cột mới cho DB cũ (CREATE IF NOT EXISTS không tự thêm cột)
             cols = {r[1] for r in self._conn.execute("PRAGMA table_info(sessions)").fetchall()}
             for name, ddl in (("codex_thread_id", "TEXT"),
+                              ("antigravity_conversation_id", "TEXT"),
                               ("compact_summary", "TEXT"),
                               ("compact_count", "INTEGER NOT NULL DEFAULT 0"),
                               ("channel", "TEXT NOT NULL DEFAULT 'web'"),
@@ -598,6 +601,23 @@ class SessionStore:
         """Thread Codex thành stale khi provider khác chen lượt vào cùng hội thoại."""
         self._write(lambda c: c.execute(
             "UPDATE sessions SET codex_thread_id = NULL WHERE id = ? AND codex_thread_id IS NOT NULL",
+            (session_id,),
+        ))
+
+    def set_antigravity_conversation_id(self, session_id: str, conversation_id: str) -> None:
+        """Gắn conversation native của Antigravity để lượt sau dùng ``--conversation``."""
+        if not conversation_id:
+            return
+        self._write(lambda c: c.execute(
+            "UPDATE sessions SET antigravity_conversation_id = ?, updated_at = ? WHERE id = ?",
+            (conversation_id, time.time(), session_id),
+        ))
+
+    def clear_antigravity_conversation_id(self, session_id: str) -> None:
+        """Provider khác chen lượt vào thì mạch Antigravity cũ đã thiếu lịch sử."""
+        self._write(lambda c: c.execute(
+            "UPDATE sessions SET antigravity_conversation_id = NULL "
+            "WHERE id = ? AND antigravity_conversation_id IS NOT NULL",
             (session_id,),
         ))
 

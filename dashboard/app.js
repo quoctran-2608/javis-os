@@ -1761,7 +1761,7 @@ document.addEventListener("keydown", resumeAudio, { once: true });
 const ENGINE_LABEL = {
   "anthropic-cli": "Claude Code", "openai-oauth": "ChatGPT", "openrouter": "OpenRouter",
   "openai": "OpenAI", "anthropic-api": "Anthropic", "gemini": "Gemini", "groq": "Groq",
-  "ollama": "Ollama",
+  "ollama": "Ollama", "antigravity-cli": "Antigravity", "antigravity": "Antigravity",
 };
 // Một dòng nhỏ dưới câu trả lời: lượt này chạy ở chế độ nào, và tốn bao nhiêu
 // token vào. Trước đây chuyện này hoàn toàn vô hình - chỉ lộ ra khi nhà cung cấp báo vượt hạn
@@ -1836,7 +1836,7 @@ async function refreshEngineBadge() {
 // ============================================
 // Mức dùng (token Javis tự đo, đa nhà cung cấp) - panel sidebar
 // ============================================
-const _PROV_LABEL = { cli: "Claude Code", codex: "ChatGPT", openrouter: "OpenRouter", openai: "OpenAI", "anthropic-api": "Anthropic", gemini: "Gemini", groq: "Groq" };
+const _PROV_LABEL = { cli: "Claude Code", codex: "ChatGPT", antigravity: "Antigravity", openrouter: "OpenRouter", openai: "OpenAI", "anthropic-api": "Anthropic", gemini: "Gemini", groq: "Groq" };
 function _fmtTok(n) {
   n = +n || 0;
   if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + "M";

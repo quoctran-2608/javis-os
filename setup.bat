@@ -29,6 +29,13 @@ echo [2/3] Kiem tra dependencies...
 call .venv\Scripts\activate.bat
 pip install -r requirements.txt -q
 
+REM Antigravity CLI la provider tuy chon. Cai best-effort bang bootstrapper chinh thuc.
+where agy >nul 2>&1
+if errorlevel 1 (
+  echo     Dang cai Google Antigravity CLI (tuy chon)...
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "try { irm https://antigravity.google/cli/install.ps1 | iex } catch { Write-Host '[CANH BAO] Khong cai duoc Antigravity CLI, co the cai sau.' }"
+)
+
 REM Giai phong port 7777 neu dang bi chiem
 echo [3/3] Giai phong port 7777...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":7777" ^| findstr "LISTENING"') do (
@@ -39,7 +46,7 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":7777" ^| findstr "LISTENING
 echo.
 echo  ==========================================
 echo   Javis OS dang chay tai: http://localhost:7777
-echo   (Dung Claude Code CLI - khong can API key)
+echo   (Ho tro Claude Code, Codex va Antigravity CLI)
 echo   Nhan Ctrl+C de dung.
 echo  ==========================================
 echo.

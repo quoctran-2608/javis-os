@@ -81,6 +81,9 @@ _DEFAULT = {
             # Không ghim model Codex: /provider/models lấy catalog LIVE bằng
             # codex app-server model/list và nhớ lại lần thành công gần nhất.
             "openai-oauth": [],
+            # Antigravity tự cung cấp catalog bằng `agy models`. Danh sách này chỉ là fallback
+            # gần nhất đã lấy được, không ghim model theo phiên bản trong source.
+            "antigravity-cli": [],
             "openrouter": ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash-001", "deepseek/deepseek-chat"],
         },
     },

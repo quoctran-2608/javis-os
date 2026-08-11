@@ -162,6 +162,7 @@ _ENGINE_AUTH_PATTERNS = ("failed to authenticate", "oauth session expired",
 ENGINE_FIX = {
     "claude": "Vào trang Models để kết nối lại.",
     "codex": "Vào trang Models để kết nối lại ChatGPT.",
+    "antigravity": "Vào trang Models để kết nối lại Antigravity.",
 }
 ENGINE_FIX_DEFAULT = "Vào trang Models để kết nối và sử dụng Javis."
 
@@ -267,7 +268,11 @@ def probe_claude_credentials(path=None) -> tuple[bool, str]:
 # Provider nào có "phiên đăng nhập CLI" để mà mất. Các provider API (openrouter, openai,
 # anthropic-api, gemini) chạy bằng API key: key sai thì lượt chạy báo lỗi ngay tại chỗ,
 # không có phiên nào hết hạn ngầm, nên chúng KHÔNG có đèn báo não.
-_PROVIDER_ENGINE = {"anthropic-cli": "claude", "openai-oauth": "codex"}
+_PROVIDER_ENGINE = {
+    "anthropic-cli": "claude",
+    "openai-oauth": "codex",
+    "antigravity-cli": "antigravity",
+}
 
 
 def engines_in_use() -> set:
@@ -302,15 +307,22 @@ def probe_engines() -> None:
     live = engines_in_use()
     for name in [n for n in _engines if n not in live]:
         _engines.pop(name, None)
-    if "claude" not in live:
-        return
-    ok, msg = probe_claude_credentials()
-    cur = _engines.get("claude") or {}
-    if ok and cur.get("source") == "run" and not cur.get("ok"):
-        return   # đèn đỏ do lượt chạy thật - chờ engine_run_ok tắt, probe không đè
-    _set_engine("claude", ok, msg, "probe")
-
-
+    if "claude" in live:
+        ok, msg = probe_claude_credentials()
+        cur = _engines.get("claude") or {}
+        if not (ok and cur.get("source") == "run" and not cur.get("ok")):
+            _set_engine("claude", ok, msg, "probe")
+    if "antigravity" in live:
+        try:
+            from antigravity_cli import auth_status
+            status = auth_status()
+            ok = bool(status.get("connected"))
+            msg = status.get("error") or ""
+        except Exception as exc:
+            ok, msg = False, f"{type(exc).__name__}: {exc}"
+        cur = _engines.get("antigravity") or {}
+        if not (ok and cur.get("source") == "run" and not cur.get("ok")):
+            _set_engine("antigravity", ok, msg, "probe")
 def engines_snapshot() -> dict:
     """Lọc lại theo bộ não ĐANG dùng ngay lúc hỏi, không chờ vòng quét kế tiếp.
 

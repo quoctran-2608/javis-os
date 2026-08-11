@@ -204,6 +204,21 @@ for _ten in ("openrouter_chat_with_mcp", "openai_chat_with_mcp", "gemini_chat_wi
              "groq_chat_with_mcp", "ollama_chat_with_mcp", "anthropic_chat_with_mcp",
              "responses_with_mcp"):
     setattr(main.engine, _ten, _lam_stream_co_tool(_ten))
+
+
+def _agy_stream_gia(model, messages, reasoning="off", **kw):
+    _goi.append({"prov": "antigravity-cli", "co_tool": bool(kw.get("enable_mcp")),
+                 "mode": kw.get("mode")})
+
+    async def _gen():
+        yield {"type": "tool_call", "name": "javis_doc_file"}
+        yield {"type": "text", "content": "Em làm xong rồi ạ."}
+        yield {"type": "usage", "input": 20, "output": 7}
+    return _gen()
+
+
+import antigravity_cli  # noqa: E402
+antigravity_cli.messages_stream = _agy_stream_gia
 # Gói ChatGPT: đường có tool đọc creds OAuth. Không giả thì nó rơi vào nhánh "chưa đăng nhập".
 main.openai_oauth.valid_creds = lambda: {"access_token": "tok", "account_id": "acc"}
 main.claude_models.oauth_token = lambda: "tok-claude"

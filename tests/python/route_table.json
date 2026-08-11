@@ -1991,6 +1991,42 @@
   "type": "APIRoute",
   "path": "/telegram/send-file",
   "name": "telegram_send_file",
+ "methods": [
+   "POST"
+  ]
+ },
+ {
+  "order": 222,
+  "type": "APIRoute",
+  "path": "/antigravity/status",
+  "name": "antigravity_status",
+  "methods": [
+   "GET"
+  ]
+ },
+ {
+  "order": 223,
+  "type": "APIRoute",
+  "path": "/antigravity/login-start",
+  "name": "antigravity_login_start",
+  "methods": [
+   "POST"
+  ]
+ },
+ {
+  "order": 224,
+  "type": "APIRoute",
+  "path": "/antigravity/login-code",
+  "name": "antigravity_login_code",
+  "methods": [
+   "POST"
+  ]
+ },
+ {
+  "order": 225,
+  "type": "APIRoute",
+  "path": "/antigravity/logout",
+  "name": "antigravity_logout",
   "methods": [
    "POST"
   ]

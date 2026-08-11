@@ -22,7 +22,7 @@ File này canh ba tầng, vì sửa hụt một tầng là lỗi quay lại nguy
    `Retry-After`. Lên tới tầng trên thì tất cả đã thành một chuỗi chữ.
 2. **Thử lại có ĐIỀU KIỆN.** Đã nhả chữ ra ngoài thì thôi (câu trả lời sẽ hiện hai lần), đã
    chạy tool thì càng thôi (lượt đó đã gửi tin, đã ghi file, đã đặt lịch).
-3. **Cả tám bộ não.** Sửa cho Anthropic rồi bỏ bảy đường kia là đúng kiểu hỏng đang sửa.
+3. **Mọi bộ não.** Sửa cho Anthropic rồi bỏ đường mới là đúng kiểu hỏng đang sửa.
 """
 from _paths import ROOT, SERVER  # noqa: E402,F401  - nạp server/ vào sys.path
 import asyncio
@@ -189,7 +189,7 @@ check("lỗi không mang dấu -> không chạy lại", len(_dem) == 1)
 
 
 # ============================================================
-# 3. Cả tám bộ não đều được thử lại, không con nào bị bỏ lại
+# 3. Mọi bộ não đều được thử lại, không con nào bị bỏ lại
 # ============================================================
 import main  # noqa: E402
 
@@ -215,6 +215,8 @@ def _lam_engine(ten):
 for _ten in ("openrouter_stream", "openai_stream", "gemini_stream", "groq_stream",
              "ollama_stream", "openai_responses_stream", "anthropic_stream"):
     setattr(main.engine, _ten, _lam_engine(_ten))
+import antigravity_cli  # noqa: E402
+antigravity_cli.messages_stream = _lam_engine("antigravity_stream")
 
 _bo_sot = []
 for _p in [d["id"] for d in main.PROVIDER_DEFS]:

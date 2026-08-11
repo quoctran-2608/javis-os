@@ -20,6 +20,7 @@
 .learn/
 .gitnexus/
 .superpowers/
+.m/
 .pytest_cache/
 videos/
 **/.staging
@@ -66,6 +67,8 @@ server/kanban.sqlite3*
 server/conversations.db
 server/conversations.db-wal
 server/conversations.db-shm
+server/conversation_state.db*
+server/memory_index.db*
 server/tg_brain.json
 server/update_state.json
 server/logs/

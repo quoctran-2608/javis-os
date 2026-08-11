@@ -54,6 +54,14 @@ RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" \
 RUN (npm install -g @openai/codex && npm cache clean --force && codex --version) \
     || echo "[build] codex cài KHÔNG thành công - provider ChatGPT subscription sẽ không dùng được (các provider khác vẫn chạy)."
 
+# Google Antigravity CLI. Bootstrapper chính thức tự chọn kiến trúc, tải manifest và kiểm SHA-512.
+# Cài vào /usr/local/bin để user non-root chạy được. Best-effort như Codex: upstream lỗi không
+# được làm cả image Javis mất khả năng chạy Claude/API.
+RUN (curl -fsSL https://antigravity.google/cli/install.sh -o /tmp/install-antigravity.sh \
+     && bash /tmp/install-antigravity.sh --dir /usr/local/bin \
+     && agy --version) \
+    || echo "[build] Antigravity CLI cài KHÔNG thành công - provider Antigravity sẽ không dùng được."
+
 WORKDIR /app
 
 # Layer-cached Python deps (copy requirements first so app changes don't re-pip).
@@ -65,7 +73,7 @@ COPY . .
 
 # Non-root runtime user. Code stays root-owned + read-only; state on volumes.
 RUN useradd -u 10001 -m -d /home/javis javis \
-    && mkdir -p /data/state /data/vault /brains /home/javis/.claude /home/javis/.codex \
+    && mkdir -p /data/state /data/vault /brains /home/javis/.claude /home/javis/.codex /home/javis/.gemini \
     && chown -R javis:javis /data /brains /home/javis
 
 # Writable state under /data; ALL second brains under /brains (mount riêng → git-backup được).
@@ -96,8 +104,8 @@ ENV JAVIS_CODEX_SANDBOX=off
 
 USER javis
 
-# Persist state (/data) + brains (/brains) + Claude auth + Codex auth (login ChatGPT).
-VOLUME ["/data", "/brains", "/home/javis/.claude", "/home/javis/.codex"]
+# Persist state (/data) + brains (/brains) + credential của ba engine CLI.
+VOLUME ["/data", "/brains", "/home/javis/.claude", "/home/javis/.codex", "/home/javis/.gemini"]
 
 EXPOSE 7777
 

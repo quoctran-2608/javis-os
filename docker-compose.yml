@@ -36,6 +36,7 @@ services:
       #   Sau đó: cd brains && git init && git add -A && git commit -m backup && git push
       - claude-auth:/home/javis/.claude        # token đăng nhập Claude (giữ qua mọi update!)
       - codex-auth:/home/javis/.codex          # token đăng nhập ChatGPT/Codex (codex login - giữ qua update)
+      - antigravity-auth:/home/javis/.gemini   # token + cấu hình Antigravity CLI (giữ qua update)
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,os,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:'+os.getenv('JAVIS_PORT','7777')+'/health',timeout=4).status==200 else 1)"]
       interval: 30s
@@ -78,3 +79,4 @@ volumes:
   javis-brains:
   claude-auth:
   codex-auth:
+  antigravity-auth:

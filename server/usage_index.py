@@ -186,6 +186,7 @@ def _scan_codex(conn) -> int:
 # codex/openai-oauth = engine ChatGPT. Gom ve 'claude'/'codex' de tron dung cot voi log tho.
 _EVENT_CLAUDE = {"cli", "claude", "anthropic-cli"}
 _EVENT_CODEX = {"codex", "openai-oauth", "chatgpt", "oauth"}
+_EVENT_ANTIGRAVITY = {"antigravity", "antigravity-cli", "agy"}
 
 
 def _ingest_events(conn) -> int:
@@ -244,6 +245,10 @@ def _ingest_events(conn) -> int:
         elif prov in _EVENT_CODEX:
             events.append({"day": day, "provider": "codex", "source": "javis", "activity": "chat",
                            "model": model, "project": "(events)",
+                           "input": tin, "output": tout, "cache_read": 0, "cache_create": 0})
+        elif prov in _EVENT_ANTIGRAVITY:
+            events.append({"day": day, "provider": "antigravity", "source": "javis",
+                           "activity": "chat", "model": model, "project": "(events)",
                            "input": tin, "output": tout, "cache_read": 0, "cache_create": 0})
     if events:
         _insert_events(conn, path, events)

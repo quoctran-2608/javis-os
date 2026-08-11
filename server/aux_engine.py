@@ -16,6 +16,8 @@ Ba loại engine, khác nhau ở CÔNG CỤ có được - đây là chỗ phả
 - openai-oauth: Codex CLI, cũng là agent thật (đọc/ghi file + MCP qua profile javis).
   Sandbox của Codex ánh xạ theo mode: suggest -> read-only, auto -> workspace-write,
   full -> toàn quyền. KHÔNG có allowlist per-call như Claude nên chỉ chặn ở tầng sandbox.
+- antigravity-cli: Antigravity CLI, agent native + MCP Hub qua proxy stdio. Mode suggest
+  chạy plan+sandbox; auto nhận sửa; full tự duyệt quyền.
 - api (openrouter/openai/gemini/anthropic-api): KHÔNG có tool native. Bù lại hub cấp
   javis_read_file / javis_list_dir / javis_write_file / javis_use_skill + tool MCP, và
   javis_write_file tự chặn khi mode là suggest (mcp_hub._builtin_tools). Không có Bash,
@@ -36,6 +38,7 @@ import config as cfgmod
 
 CLAUDE = "anthropic-cli"
 CODEX = "openai-oauth"
+ANTIGRAVITY = "antigravity-cli"
 API_PROVIDERS = ("openrouter", "openai", "gemini", "groq", "anthropic-api")
 
 # provider -> tên trường chứa API key trong settings["model"]
@@ -133,6 +136,15 @@ def availability(spec: dict, settings: dict = None) -> tuple:
                 return False, "Chưa cài Codex CLI (cần đăng nhập gói ChatGPT)."
         except Exception:
             return False, "Không kiểm tra được Codex CLI."
+        return True, ""
+    if prov == ANTIGRAVITY:
+        try:
+            from antigravity_cli import auth_status
+            status = auth_status()
+            if not status.get("connected"):
+                return False, status.get("error") or "Antigravity CLI chưa đăng nhập."
+        except Exception:
+            return False, "Không kiểm tra được Antigravity CLI."
         return True, ""
     if prov in API_PROVIDERS:
         if not api_key_for(prov, settings):
@@ -335,6 +347,20 @@ def _build_codex(spec, claude_cli_obj, mode, tag, codex_profile=None):
     return cc
 
 
+def _build_antigravity(spec, claude_cli_obj, mode, tag):
+    from antigravity_cli import AntigravityCLI
+    return AntigravityCLI(
+        cwd=getattr(claude_cli_obj, "javis_vault", None)
+            or getattr(claude_cli_obj, "cwd", None),
+        tag=tag or getattr(claude_cli_obj, "tag", "aux"),
+        model=spec.get("model") or None,
+        instructions=getattr(claude_cli_obj, "system_prompt", None),
+        mode=mode or getattr(claude_cli_obj, "javis_mode", None) or "full",
+        expose_workspace=True,
+        enable_mcp=True,
+    )
+
+
 def apply(deps, cli, mode: str = None, tag: str = None):
     """Dùng ở các nơi chạy nền sau khi đã dựng xong engine Claude.
 
@@ -387,6 +413,8 @@ def swap(cli, mode: str = None, tag: str = None, spec: dict = None,
             return cli
         if prov == CODEX:
             primary = _build_codex(sp, cli, mode, tag, codex_profile)
+        elif prov == ANTIGRAVITY:
+            primary = _build_antigravity(sp, cli, mode, tag)
         elif prov in API_PROVIDERS:
             primary = _build_api(sp, cli, mode, tag)
         else:

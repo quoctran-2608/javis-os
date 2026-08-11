@@ -40,6 +40,8 @@ server/connector-files/
 server/conversations.db
 server/conversations.db-wal
 server/conversations.db-shm
+server/conversation_state.db*
+server/memory_index.db*
 server/runtime.db
 server/runtime.db-wal
 server/runtime.db-shm
@@ -81,6 +83,7 @@ brain/Memory/
 .superpowers/
 .claude/worktrees/
 .codex-tmp/
+.m/
 
 # Cấu hình chạy dev preview cục bộ (đường dẫn theo máy, không thuộc sản phẩm)
 .claude/launch.json

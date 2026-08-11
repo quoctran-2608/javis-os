@@ -17,6 +17,7 @@ Javis có thể chạy trên nhiều "engine" (nhà cung cấp AI) khác nhau. B
 |---|---|---|---|
 | Qua **Claude Code** | Anthropic OAuth (Claude Code) | Có - MCP native + skill native | **Có** |
 | Qua **Codex** | OpenAI OAuth (ChatGPT) | Có - MCP qua hub (cả kết nối local như Zalo/Webcake) + kho MCP GỐC của Codex (server bạn tự `codex mcp add`) + skill qua router (`javis_use_skill` / đọc file `skills/`) | **Có** |
+| Qua **Antigravity CLI** | Google Sign-In | Có - MCP Hub qua cầu stdio + tool native của Antigravity | **Có** |
 | **Gọi API thẳng** | OpenRouter | Có - MCP qua hub + tool file vault + skill qua router | Không |
 | **Gọi API thẳng** | OpenAI (API) | Có - như trên | Không |
 | **Gọi API thẳng** | Anthropic (API) | Có - như trên | Không |
@@ -39,7 +40,7 @@ Ngoài từng ấy, mọi năng lực còn lại là như nhau. Cụ thể là: 
 
 > **Giao việc Kanban từ engine API có từ 0.17.1.** Trước đó đường duy nhất là `POST /kanban/task`, mà gọi được nó thì phải có Bash và curl - nên chỉ Claude Code với Codex làm được, dù tài liệu vẫn hứa mọi bộ não đều làm được. Nay có tool `javis_task` đi qua hub nên lời hứa đó thành đúng.
 
-Nói ngắn gọn: **năng lực nằm ở Javis, không nằm ở model.** Hai engine CLI (**Claude Code** với gói Claude, **Codex** với gói ChatGPT) tận dụng chính gói subscription bạn đang trả và chạy thêm được lệnh máy; sáu provider API chỉ cần một API key và làm được mọi thứ còn lại - kể cả điều phối việc, tạo loop, chạy skill. Agent trong Workflow cũng chọn được model theo nhà cung cấp - xem [Agents & Workflows](07-agents-va-workflows.md).
+Nói ngắn gọn: **năng lực nằm ở Javis, không nằm ở model.** Ba engine CLI (**Claude Code**, **Codex**, **Google Antigravity**) chạy thêm được lệnh máy; sáu provider API chỉ cần một API key và làm được mọi thứ còn lại - kể cả điều phối việc, tạo loop, chạy skill. Agent trong Workflow cũng chọn được model theo nhà cung cấp - xem [Agents & Workflows](07-agents-va-workflows.md).
 
 ## Mở ở đâu trong Javis
 
@@ -47,14 +48,15 @@ Nói ngắn gọn: **năng lực nằm ở Javis, không nằm ở model.** Hai 
 2. Ở thanh bên trái, mở nhóm **Kết nối**, rồi bấm mục **Models**.
 3. Trang Models hiện 4 khối theo thứ tự: **◆ Main Model** ("model chính cho hội thoại"), **◆ Providers** ("đăng nhập / kết nối nhà cung cấp model"), **◆ Model việc nền** ("loop · việc Kanban · nhắc hẹn · tự học · tiêu hoá nguồn"), **◆ Suy nghĩ** ("độ sâu reasoning khi trả lời").
 
-## Bảy provider có sẵn
+## Chín provider có sẵn
 
-Khối **Providers** liệt kê 7 nhà cung cấp. **Cái nào đã kết nối được xếp lên đầu**, chưa kết nối dồn xuống dưới; trong mỗi nhóm giữ nguyên thứ tự gốc bên dưới. Nhờ vậy máy đã đấu vài nhà cung cấp thì mở trang ra là thấy ngay chúng, khỏi cuộn tìm.
+Khối **Providers** liệt kê 9 nhà cung cấp. **Cái nào đã kết nối được xếp lên đầu**, chưa kết nối dồn xuống dưới; trong mỗi nhóm giữ nguyên thứ tự gốc bên dưới. Nhờ vậy máy đã đấu vài nhà cung cấp thì mở trang ra là thấy ngay chúng, khỏi cuộn tìm.
 
 | Provider (nhãn trên màn hình) | Kiểu kết nối | Ghi chú |
 |---|---|---|
 | **Anthropic OAuth (Claude Code)** | Đăng nhập Claude Code, không cần key | Đầy đủ MCP/skill/tool máy. Là Main Model mặc định |
 | **OpenAI OAuth (ChatGPT)** | Device code (đăng nhập gói ChatGPT) | Chạy qua Codex, đấu kho Kết nối qua hub + dùng skill qua router |
+| **Google Antigravity CLI** | Google Sign-In, không cần API key | Chạy `agy`, model lấy live bằng `agy models`, resume conversation native, dùng MCP Hub của Javis |
 | **OpenRouter** | Dán API key | Nhiều model 1 chỗ, MCP + tool file + skill qua hub |
 | **Anthropic (API)** | Dán API key | MCP + tool file + skill qua hub (từ 0.9) |
 | **OpenAI (ChatGPT API)** | Dán API key | MCP + tool file + skill qua hub |
@@ -62,9 +64,9 @@ Khối **Providers** liệt kê 7 nhà cung cấp. **Cái nào đã kết nối 
 | **Groq (API)** | Dán API key | MCP + tool file + skill qua hub. Suy luận rất nhanh, hợp làm model việc nền. Key này còn là thứ cho phép **ra lệnh bằng ghi âm trên Telegram** (Whisper nghe giọng thành chữ) - xem [Telegram](11-telegram.md); đấu key là đủ, không bắt buộc đổi model chính sang Groq |
 | **Ollama Cloud** | Dán API key lấy ở ollama.com | MCP + tool file + skill qua hub. Model mã nguồn mở cỡ lớn (gpt-oss, qwen3-coder, deepseek) chạy trên máy chủ của Ollama |
 
-Mỗi card provider hiển thị trạng thái **● Đã kết nối** hoặc **○ Chưa kết nối**, kèm số model khả dụng, và một nhãn kiểu bên cạnh tên: **MCP/skill** (Claude Code), **Device code** (ChatGPT), **MCP Javis** (các provider API). Card nào đang là Main Model sẽ có nhãn **MAIN**.
+Mỗi card provider hiển thị trạng thái **● Đã kết nối** hoặc **○ Chưa kết nối**, kèm số model khả dụng, và một nhãn kiểu bên cạnh tên: **MCP/skill** (Claude Code), **Device code** (ChatGPT), **Agent CLI · MCP** (Antigravity), **MCP Javis** (các provider API). Card nào đang là Main Model sẽ có nhãn **MAIN**.
 
-> Nhãn của các provider API trước 0.9.270 ghi là **chat**, khiến nhiều người tưởng chúng chỉ chat suông. Sai: chúng gọi kho Kết nối, đọc/ghi brain và chạy skill y như hai engine CLI. Nhãn giờ là **MCP Javis** cho đúng.
+> Nhãn của các provider API trước 0.9.270 ghi là **chat**, khiến nhiều người tưởng chúng chỉ chat suông. Sai: chúng gọi kho Kết nối, đọc/ghi brain và chạy skill như các engine CLI. Nhãn giờ là **MCP Javis** cho đúng.
 
 ## Cách dùng (từng bước)
 
@@ -125,6 +127,20 @@ Lấy key ở đâu:
 - **OpenRouter**: trang openrouter.ai (một key gọi được rất nhiều model của nhiều hãng).
 - **Anthropic (API)**: console.anthropic.com.
 - **OpenAI (ChatGPT API)**: platform.openai.com.
+
+### C2. Kết nối Google Antigravity CLI
+
+1. Vào **Models**, tìm card **Google Antigravity CLI**.
+2. Nếu card báo **Antigravity CLI chưa cài**, cài bằng bootstrapper chính thức:
+   - Linux/macOS: `curl -fsSL https://antigravity.google/cli/install.sh | bash`
+   - Windows PowerShell: `irm https://antigravity.google/cli/install.ps1 | iex`
+3. Bấm **Đăng nhập Google**. Javis khởi động print mode headless của `agy` và hiện link Google Sign-In.
+4. Mở link, đăng nhập, copy authorization code rồi dán vào ô trên card và bấm **Xác nhận**.
+5. Khi card chuyển sang **● Đã kết nối**, bấm **Đổi model ▾**, chọn **Google Antigravity CLI** ở cột trái. Danh sách bên phải được lấy trực tiếp từ `agy models`, nên model mới của tài khoản hiện ra mà không cần nâng phiên bản Javis.
+
+Javis lưu `conversation_id` riêng của Antigravity trong kho phiên. Lượt sau dùng `--conversation` để resume đúng mạch. MCP Hub được nối qua một proxy stdio nhỏ; token Hub chỉ truyền trong environment của tiến trình, không được ghi vào `mcp_config.json`.
+
+Trong Docker, credential và config Antigravity nằm ở volume `antigravity-auth` gắn vào `/home/javis/.gemini`, nên redeploy/update không làm mất đăng nhập.
 - **Google Gemini (API)**: key của Gemini API, lấy ở aistudio.google.com.
 
 ### D. Đặt Main Model (chọn model chính)
@@ -140,7 +156,7 @@ Lấy key ở đâu:
 
 Danh sách model được nạp động từ chính provider (có nhãn **· live**). Nếu không lấy được từ mạng, Javis dùng danh sách dự phòng (nhãn **· catalog**); đang tải thì hiện **· đang tải…**. Model bạn chọn được lưu và áp dụng cho phiên chat mới.
 
-Khối Main Model cũng ghi một dòng về engine đang dùng, nói rõ đường đi và giới hạn thật: "Qua Claude Code - MCP Javis + skill + loop + chạy lệnh máy", "Qua Codex - MCP Javis + skill + loop + chạy lệnh máy", hoặc "Gọi API thẳng - MCP Javis + skill + loop (không chạy lệnh máy)". Trước 0.9.270 dòng cuối ghi "chat thuần (không MCP)" - sai và đã bỏ.
+Khối Main Model cũng ghi một dòng về engine đang dùng, nói rõ đường đi và giới hạn thật: "Qua Claude Code - MCP Javis + skill + loop + chạy lệnh máy", "Qua Codex - MCP Javis + skill + loop + chạy lệnh máy", "Qua Antigravity CLI - agent native + MCP Javis + chạy lệnh máy", hoặc "Gọi API thẳng - MCP Javis + skill + loop (không chạy lệnh máy)".
 
 ### E. Chọn model việc nền
 
@@ -153,9 +169,9 @@ Khối **◆ Model việc nền** quyết định model nào chạy những vi�
 
 Vài điều cần biết:
 
-- **Chọn được MỌI provider bạn đã đấu**, không riêng Claude: Claude Code, ChatGPT/Codex, OpenRouter, OpenAI, Gemini, Anthropic API. Chọn nhà cung cấp khác thì việc nền chạy bằng gói hoặc khoá của nhà đó, không ăn vào hạn mức Claude nữa.
+- **Chọn được MỌI provider bạn đã đấu**, không riêng Claude: Claude Code, ChatGPT/Codex, Antigravity, OpenRouter, OpenAI, Gemini, Anthropic API. Chọn nhà cung cấp khác thì việc nền chạy bằng gói hoặc khoá của nhà đó, không ăn vào hạn mức Claude nữa.
 - Nếu bạn chọn một provider **chưa kết nối**, khối này hiện cảnh báo "⚠ nhà cung cấp này chưa kết nối - việc nền sẽ tự dùng lại Claude". Việc nền không chết, chỉ là không tiết kiệm được.
-- **Công cụ không giống nhau giữa các đường.** Claude Code và Codex đọc/ghi file trực tiếp trong brain. Các model API (OpenRouter, OpenAI, Gemini, Anthropic API) đọc/ghi qua công cụ vault của Javis và **không chạy được lệnh máy**, nên hợp với việc đọc - tổng hợp - ghi ghi chú; việc nền nào cần chạy lệnh thì cứ để Claude.
+- **Công cụ không giống nhau giữa các đường.** Claude Code, Codex và Antigravity có tool máy native. Các model API đọc/ghi qua công cụ vault của Javis và **không chạy được lệnh máy**, nên hợp với việc đọc - tổng hợp - ghi ghi chú.
 - Với đường API, công cụ ghi file tự khoá lại khi loop đang ở mức `suggest`, đúng như khi chạy bằng Claude.
 
 ### F. Đặt mức Suy nghĩ (reasoning)
@@ -171,6 +187,7 @@ Mức này áp dụng khác nhau tuỳ engine:
 - **OpenAI**: chỉ áp cho các model dòng o-series (o1/o3/o4) và gpt-5; model thường sẽ bỏ qua.
 - **Gemini**: chỉ áp cho model 2.5 trở lên (và các model có chữ "thinking"). Model cũ hơn không được gửi tham số này để tránh lỗi.
 - **Claude Code**: chèn gợi ý suy nghĩ vào câu hỏi (từ mức think tới ultrathink theo độ sâu tăng dần).
+- **Antigravity CLI**: ánh xạ mức thấp/vừa/cao sang cờ `--effort low|medium|high`.
 
 ## Engine Claude chạy bằng gì bên dưới
 
@@ -185,6 +202,7 @@ Từ bản 0.9.37, engine Claude của Javis chạy **duy nhất qua Claude Agen
 
 - **Main Model = Claude Code**: mạnh nhất - đọc/ghi file native, chạy lệnh máy, gọi MCP, skill native, loop tự động, session resume. Chế độ khai thác hết sức mạnh Javis OS.
 - **Main Model = ChatGPT OAuth (Codex)**: gọi được toàn bộ kho Kết nối (hub tự đẩy sang Codex, gồm cả kết nối local như Zalo), có tool file của Codex, và dùng được skill qua router (Javis bơm danh sách skill vào system prompt + tool `javis_use_skill`; Codex chạy cwd=brain nên đọc thẳng `skills/<slug>/SKILL.md`). Ngoài ra Codex còn nạp kho MCP GỐC của chính nó (server bạn tự đăng ký bằng `codex mcp add`, xem trong khối gập "◆ Kết nối sẵn của Claude Code và Codex" ở trang Kết nối) - tương tự cách engine Claude dùng MCP gốc của Claude Code.
+- **Main Model = Google Antigravity CLI**: chạy print mode `stream-json`, có tool máy native, gọi kho Kết nối qua MCP Hub, chọn model live và resume bằng `conversation_id`.
 - **Main Model = OpenRouter / OpenAI (API) / Anthropic (API) / Gemini**: từ bản 0.9 cả bốn đều gọi được kho Kết nối qua vòng gọi tool, kèm tool đọc/ghi file trong vault và kích hoạt skill (`javis_use_skill`). **Việc nền cũng chạy được bằng những provider này** (xem mục E). Khác biệt còn lại so với Claude Code: không có tool chạy lệnh máy (Bash), không có WebFetch, và không resume được session CLI.
 
 Kết luận thực dụng: để Javis "làm việc" trọn vẹn nhất, giữ Main ở **Claude Code**. Chuyển sang provider API khi bạn muốn thử một model cụ thể của hãng khác, hoặc muốn đẩy phần việc nền sang một gói rẻ hơn cho đỡ hạn mức Claude.
@@ -219,6 +237,8 @@ Bạn không cần rời trang Models để đổi model: bấm **Đổi model �
 | **Đăng nhập Claude** | Card Claude Code | Bắt đầu luồng đăng nhập bằng link |
 | **↻ Kiểm tra lại** | Card Claude Code (chỉ khi chưa đăng nhập) | Hỏi lại trạng thái đăng nhập |
 | **Đăng nhập ChatGPT** | Card OpenAI OAuth | Đăng nhập bằng mã device code |
+| **Đăng nhập Google** | Card Google Antigravity CLI | Mở link Google Sign-In và nhận authorization code |
+| **↻ Tải lại model** | Card Google Antigravity CLI | Gọi lại `agy models` và làm mới danh sách |
 | **Qua trình duyệt** | Card OpenAI OAuth | Đường dự phòng khi workspace chặn device code |
 | **Kết nối** / **Đổi key** / **Ngắt** | Card provider API | Lưu key mới / thay key / xoá key |
 | **Đổi model ▾** | Main Model và Model việc nền | Mở bảng chọn model tương ứng |
@@ -248,6 +268,8 @@ Bạn không cần rời trang Models để đổi model: bấm **Đổi model �
 - **Banner đỏ "⚠ Bộ não claude mất đăng nhập" trên máy chưa từng cài Claude**: sửa ở 0.9.270. Đèn báo não giữ trạng thái trong RAM và không ai dọn, nên đèn đỏ thắp hồi Claude còn là Main Model treo mãi sau khi bạn đổi sang OpenRouter. Giờ đèn chỉ tính những bộ não bạn THẬT SỰ chọn (Main Model + model việc nền khi đặt rõ provider), và tự tắt ngay khi bạn đổi sang nhà cung cấp khác - không phải chờ vòng quét 10 phút.
 - **Bấm Ngắt provider đang là Main**: Javis tự chuyển Main về Claude Code để chat không gãy. Đây là hành vi cố ý, không phải lỗi.
 - **ChatGPT OAuth báo chưa cài Codex CLI**: kênh này cần Codex CLI trên máy. Nếu chưa có, dùng Claude Code hoặc OpenRouter cho ổn định.
+- **Antigravity báo chưa cài CLI**: cài lệnh `agy`, khởi động lại Javis rồi bấm **↻ Kiểm tra lại**.
+- **Antigravity không thấy model**: mở terminal chạy `agy models`. Nếu lệnh yêu cầu đăng nhập, quay lại card và bấm **Đăng nhập Google**. Nếu CLI nằm ở chỗ lạ, đặt `JAVIS_ANTIGRAVITY_BIN`.
 
 ## Liên quan
 

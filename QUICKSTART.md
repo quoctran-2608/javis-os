@@ -15,7 +15,7 @@ Chạy Javis OS trong vài phút. Chi tiết từng phần: [docs/](docs/README.
    ```
    (hostname xem ở hPanel → VPS; ví dụ `javis.srv1782015.hstgr.cloud`.)
 4. **Deploy**. Đợi 1-3 phút. Mở app bằng nút **Open** (hoặc `https://<DOMAIN_NAME>`).
-5. Lần đầu: màn hình sẽ hỏi tạo tài khoản admin. Sau đó đăng nhập Claude Code trong terminal container 1 lần: `claude auth login --claudeai`.
+5. Lần đầu: màn hình sẽ hỏi tạo tài khoản admin. Sau đó kết nối bộ não trong trang **Models**. Claude cũng có thể đăng nhập trong terminal container: `claude auth login --claudeai`.
 
 Cập nhật bản mới: bấm **Redeploy** trong Docker Manager (image `:latest`, `pull_policy: always`). Dữ liệu brain giữ nguyên trong volume.
 
@@ -35,7 +35,7 @@ Mở http://localhost:7777. Muốn HTTPS qua Caddy: thêm `-f docker-compose.htt
 
 ## Sau khi chạy
 
-- **Chọn engine/model**: trang **Models** (Claude Code, ChatGPT/Codex, OpenRouter, OpenAI, Google Gemini, Anthropic API).
+- **Chọn engine/model**: trang **Models** (Claude Code, ChatGPT/Codex, Google Antigravity, OpenRouter, OpenAI, Google Gemini, Anthropic API).
 - **Đấu kết nối** (POS, quảng cáo, lịch, Zalo...) để báo cáo số liệu thật: trang **Kết nối** - xem [docs/09](docs/09-mcp-va-so-lieu.md).
 - **Sao lưu brain lên GitHub** để không mất dữ liệu: trang **Tự học** - xem [docs/18](docs/18-sao-luu-github.md).
 - **Theo dõi token đã dùng**: trang **Mức dùng** - xem [docs/23](docs/23-muc-dung-token.md).

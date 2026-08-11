@@ -16,8 +16,12 @@ function check(name, cond) {
 // ---- console.js phai co dung co che nay ----
 check("renderModels hoi /claude/status de biet Claude co dang nhap that khong",
   /claudeOn = !!\(await \(await fetch\("\/claude\/status"\)\)\.json\(\)\)\.connected/.test(CONSOLE_JS));
-check("provOn: provider cli lay theo claudeOn, con lai lay theo configured",
-  /const provOn = \(p\) => \(p\.kind === "cli" \? claudeOn : !!p\.configured\)/.test(CONSOLE_JS));
+check("renderModels hoi /antigravity/status de biet Antigravity co dang nhap that khong",
+  /antigravityOn = !!\(await \(await fetch\("\/antigravity\/status"\)\)\.json\(\)\)\.connected/.test(CONSOLE_JS));
+check("Antigravity code sai/het han co nut lay link OAuth moi ngay trong panel",
+  CONSOLE_JS.includes('id="agyRestart">Lấy link mới</button>'));
+check("provOn: moi CLI lay probe rieng, provider API/OAuth lay configured",
+  /p\.kind === "cli" \? claudeOn\s*: p\.kind === "agy" \? antigravityOn : !!p\.configured/.test(CONSOLE_JS));
 check("sort co tiebreak theo chi so goc (on dinh, khong phu thuoc engine)",
   /\.sort\(\(a, b\) => \(provOn\(b\.p\) - provOn\(a\.p\)\) \|\| \(a\.i - b\.i\)\)/.test(CONSOLE_JS));
 check("danh sach card dung ban da sap xep", CONSOLE_JS.includes("${provList.map(provCard).join(\"\")}"));
@@ -31,8 +35,9 @@ check("KHONG con cho nao render thang mang providers chua sap",
   && !/=>\s*openModelPicker\(providers,/.test(CONSOLE_JS));
 
 // ---- Hanh vi sort (ban sao dung nguyen bieu thuc tren) ----
-function order(list, claudeOn) {
-  const provOn = (p) => (p.kind === "cli" ? claudeOn : !!p.configured);
+function order(list, claudeOn, antigravityOn) {
+  const provOn = (p) => (p.kind === "cli" ? claudeOn
+    : p.kind === "agy" ? antigravityOn : !!p.configured);
   return list.map((p, i) => ({ p, i }))
     .sort((a, b) => (provOn(b.p) - provOn(a.p)) || (a.i - b.i))
     .map((x) => x.p.id);
@@ -40,6 +45,7 @@ function order(list, claudeOn) {
 const DEFS = [
   { id: "anthropic-cli", kind: "cli", configured: true },   // server LUON tra true (khong co key_field)
   { id: "openai-oauth", kind: "oauth", configured: false },
+  { id: "antigravity-cli", kind: "agy", configured: false },
   { id: "openrouter", kind: "api", configured: false },
   { id: "anthropic-api", kind: "api", configured: false },
   { id: "openai", kind: "api", configured: false },
@@ -48,22 +54,28 @@ const DEFS = [
 ];
 
 check("da ket noi len dau, giu thu tu goc trong tung nhom",
-  JSON.stringify(order(DEFS, true)) === JSON.stringify(
-    ["anthropic-cli", "gemini", "groq", "openai-oauth", "openrouter", "anthropic-api", "openai"]));
+  JSON.stringify(order(DEFS, true, false)) === JSON.stringify(
+    ["anthropic-cli", "gemini", "groq", "openai-oauth", "antigravity-cli",
+     "openrouter", "anthropic-api", "openai"]));
 
 // Day la ly do phai hoi /claude/status: tin theo configured thi Claude chua dang nhap van
 // nam chem che tren cung.
 check("Claude CHUA dang nhap thi tut xuong nhom duoi",
-  JSON.stringify(order(DEFS, false)) === JSON.stringify(
-    ["gemini", "groq", "openai-oauth", "openrouter", "anthropic-api", "openai"].slice(0, 2)
-      .concat(["anthropic-cli", "openai-oauth", "openrouter", "anthropic-api", "openai"])));
+  JSON.stringify(order(DEFS, false, false)) === JSON.stringify(
+    ["gemini", "groq", "anthropic-cli", "openai-oauth", "antigravity-cli",
+     "openrouter", "anthropic-api", "openai"]));
+
+check("Antigravity da dang nhap thi len nhom tren theo thu tu goc",
+  JSON.stringify(order(DEFS, false, true)) === JSON.stringify(
+    ["antigravity-cli", "gemini", "groq", "anthropic-cli", "openai-oauth",
+     "openrouter", "anthropic-api", "openai"]));
 
 check("chua ket noi cai nao thi giu nguyen thu tu goc",
-  JSON.stringify(order(DEFS.map((p) => ({ ...p, configured: false })), false))
+  JSON.stringify(order(DEFS.map((p) => ({ ...p, configured: false })), false, false))
     === JSON.stringify(DEFS.map((p) => p.id)));
 
 check("ket noi HET thi cung giu nguyen thu tu goc",
-  JSON.stringify(order(DEFS.map((p) => ({ ...p, configured: true })), true))
+  JSON.stringify(order(DEFS.map((p) => ({ ...p, configured: true })), true, true))
     === JSON.stringify(DEFS.map((p) => p.id)));
 
 if (fails.length) { console.log("\nFAIL - test_prov_order: " + fails.length + " loi"); process.exit(1); }

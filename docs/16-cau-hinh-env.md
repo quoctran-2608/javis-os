@@ -122,6 +122,9 @@ Lưu ý: hai biến TTS này áp cho giọng Edge TTS miễn phí mặc định.
 | `JAVIS_MEMORY_INDEX_MAX` | Trần ký tự của chỉ mục bộ nhớ (`MEMORY.md`) nạp vào mọi lượt chat. Vượt trần thì Javis rút gọn dần mô tả chứ không bỏ ký ức | `20000` | Bộ nhớ quá dày làm mỗi lượt chat tốn token; muốn siết thì hạ số này. Xem [Second Brain](13-second-brain-bo-nho-wiki.md). |
 | `JAVIS_CLAUDE_ENGINE` | (Lịch sử) Từ 0.9.37 engine Claude luôn chạy qua Agent SDK chính chủ - biến này không còn tác dụng, đặt `cli`/`sdk-loops` sẽ bị bỏ qua kèm một dòng log | `sdk` | Không cần đụng. Engine Claude trục trặc thì báo lỗi kèm log server. |
 | `JAVIS_CODEX_BIN` | Đường dẫn tuyệt đối tới file thực thi `codex` | Tự dò trong PATH và các chỗ cài quen thuộc | Cài Codex CLI ở nơi lạ mà Javis không tìm ra. |
+| `JAVIS_ANTIGRAVITY_BIN` | Đường dẫn tuyệt đối tới file thực thi `agy` | Tự dò trong PATH, `~/.local/bin` và thư mục cài chính thức | Cài Google Antigravity CLI ở nơi lạ mà Javis không tìm ra. |
+| `JAVIS_ANTIGRAVITY_TIMEOUT` | Trần thời gian cho một lượt print mode Antigravity, tính bằng giây | `600` | Việc dài bị dừng trước khi xong thì tăng. Giá trị nhỏ hơn 30 tự bị nâng lên 30. |
+| `JAVIS_ANTIGRAVITY_TOKEN_FILE` | Đường dẫn file OAuth token của Antigravity | `~/.gemini/antigravity-cli/antigravity-oauth-token` | Chỉ dùng khi môi trường của bạn lưu token file ở chỗ khác. |
 | `CLAUDE_CONFIG_DIR` | Thư mục cấu hình của Claude Code (nơi có `.credentials.json`). Đặt biến này là ĐÈ hẳn, giống hành vi của Claude Code | `~/.claude` | Bạn đã tự đổi thư mục cấu hình Claude Code. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Token OAuth của Claude Code, dùng để hỏi danh sách model thật từ Anthropic | (trống, đọc từ file credentials) | Môi trường không có file credentials (CI, container tối giản) mà vẫn muốn danh sách model động. |
 | `JAVIS_CLAUDE_PROJECTS_DIR` | Nơi Javis đọc log phiên Claude Code để tính **Mức dùng** | `~/.claude/projects` | Log Claude Code nằm chỗ khác. Xem [Mức dùng: token & chi phí](23-muc-dung-token.md). |
@@ -157,7 +160,7 @@ Sửa xong phải khởi động lại Javis. Ảnh đã bị dọn mà vẫn c�
 
 ## Điểm cần nhớ về ANTHROPIC_API_KEY
 
-Javis dùng chính **gói subscription** bạn đang trả làm bộ não (Claude Code cho gói Claude, Codex cho gói ChatGPT), nên **không cần** biến `ANTHROPIC_API_KEY` trong `.env`. Các MCP bạn cài vào Claude Code, Javis tự kế thừa. Nếu muốn dùng model qua nhà cung cấp API (OpenRouter, OpenAI API, Anthropic API, Google Gemini API, Groq API), bạn nhập khoá trong app ở trang **Models**, không đặt trong `.env`. Khoá nhập ở đó được mã hoá trước khi lưu xuống `settings.json`. Xem [Models & engine](10-models-va-engine.md).
+Javis có thể dùng engine CLI đã đăng nhập (Claude Code, Codex, Google Antigravity), nên **không cần** biến `ANTHROPIC_API_KEY` trong `.env`. Nếu muốn dùng model qua nhà cung cấp API (OpenRouter, OpenAI API, Anthropic API, Google Gemini API, Groq API), bạn nhập khoá trong app ở trang **Models**, không đặt trong `.env`. Khoá nhập ở đó được mã hoá trước khi lưu xuống `settings.json`. Xem [Models & engine](10-models-va-engine.md).
 
 ## Ví dụ một file .env tối giản
 

@@ -159,8 +159,9 @@ def _reset_engines():
     connect_health.on_engine_down = None
 
 
-def test_flag_engine_bat_den_voi_loi_that():
+def test_flag_engine_bat_den_voi_loi_that(monkeypatch):
     """Chuỗi lỗi THẬT của vụ 2026-07-27 phải bật đèn."""
+    monkeypatch.setattr(connect_health, "engines_in_use", lambda: {"claude"})
     _reset_engines()
     hit = connect_health.flag_engine_auth_error(
         "claude", "Failed to authenticate: OAuth session expired and could not be refreshed")
@@ -198,8 +199,9 @@ def test_flag_engine_khong_bat_voi_ket_qua_thuong():
     assert "claude" not in connect_health.engines_snapshot()
 
 
-def test_notify_dung_mot_lan_moi_dot_chet():
+def test_notify_dung_mot_lan_moi_dot_chet(monkeypatch):
     """Chết báo Telegram MỘT lần; chết tiếp không spam; hồi sinh rồi chết lại thì báo lại."""
+    monkeypatch.setattr(connect_health, "engines_in_use", lambda: {"claude"})
     _reset_engines()
     calls = []
     connect_health.on_engine_down = lambda text: calls.append(text)

@@ -32,3 +32,6 @@ uv>=0.5
 # connector google-keep khỏi bắt user mở terminal chạy lệnh. Kéo theo pycryptodomex/requests/
 # urllib3; đã kiểm bằng `pip install --dry-run`: KHÔNG đụng tới pin fastapi/starlette ở trên.
 gpsoauth>=1.0
+# agy >=1.1.2 đọc OAuth code từ controlling terminal (CONIN$), không đọc stdin pipe.
+# pywinpty tạo terminal ẩn để nút Đăng nhập Google hoạt động ngay trong panel Windows.
+pywinpty==3.0.5; sys_platform == "win32"

@@ -73,17 +73,29 @@ if ! command -v claude >/dev/null 2>&1; then
 fi
 ok "Claude CLI $(claude --version 2>/dev/null || echo installed)"
 
-# --- 5. venv + python deps ---
+# --- 5. Google Antigravity CLI (best-effort, provider tuỳ chọn) ---
+if ! command -v agy >/dev/null 2>&1; then
+  log "Installing Google Antigravity CLI..."
+  if ! curl -fsSL https://antigravity.google/cli/install.sh | bash >/dev/null 2>&1; then
+    warn "Antigravity CLI install skipped. You can install it later from the Models page guide."
+  fi
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+if command -v agy >/dev/null 2>&1; then
+  ok "Antigravity CLI $(agy --version 2>/dev/null || echo installed)"
+fi
+
+# --- 6. venv + python deps ---
 log "Creating virtualenv (.venv)..."
 [ -d .venv ] || python3 -m venv .venv
 ./.venv/bin/pip install --upgrade pip -q
 ./.venv/bin/pip install -r requirements.txt -q
 ok "Python deps installed"
 
-# --- 6. .env (chmod 600 - holds tokens) ---
+# --- 7. .env (chmod 600 - holds tokens) ---
 if [ ! -f .env ]; then cp env.example .env; chmod 600 .env; ok "Created .env from template"; else chmod 600 .env 2>/dev/null || true; ok ".env exists"; fi
 
-# --- 7. minimal config prompt ---
+# --- 8. minimal config prompt ---
 if [ -t 0 ]; then
   read -rp "Vault path [blank = in-repo vault/]: " VP || true
   if [ -n "${VP:-}" ]; then
@@ -92,13 +104,16 @@ if [ -t 0 ]; then
 fi
 grep -q '^JAVIS_HOST=' .env || echo "JAVIS_HOST=127.0.0.1" >> .env
 
-# --- 8. one-time Claude auth reminder ---
+# --- 9. one-time Claude auth reminder ---
 if ! claude auth status >/dev/null 2>&1; then
   warn "Claude CLI is not logged in. Run this ONCE (opens a browser-login URL):"
   echo "      claude auth login --claudeai"
 fi
 
-# --- 9. service: systemd if available, else nohup ---
+# Antigravity đăng nhập ngay trong Dashboard > Models; không probe bằng print mode ở đây vì
+# lệnh đó sẽ mở flow OAuth và làm installer chờ vô ích.
+
+# --- 10. service: systemd if available, else nohup ---
 PY="$APP_DIR/.venv/bin/python"
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   log "Installing systemd service..."

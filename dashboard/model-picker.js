@@ -45,7 +45,7 @@
     const cached = modelCache[pid];
     if (cached && Date.now() - cached.ts < MODEL_CACHE_MS) return cached.models;
     try {
-      const force = pid === "openai-oauth" ? "&refresh=1" : "";
+      const force = (pid === "openai-oauth" || pid === "antigravity-cli") ? "&refresh=1" : "";
       const d = await (await fetch("/provider/models?provider=" + encodeURIComponent(pid) + force)).json();
       modelCache[pid] = { models: d.models || [], ts: Date.now() };
     } catch (e) { modelCache[pid] = { models: [], ts: Date.now() }; }

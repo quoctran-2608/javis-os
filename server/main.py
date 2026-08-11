@@ -37,6 +37,14 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 from claude_cli import CodexCLI, claude_engine, find_claude_cli, find_codex_cli, cancel_all, _empty_mcp_file, auth_status as claude_auth_status, auth_login as claude_auth_login, auth_logout as claude_auth_logout, auth_login_ui_start, auth_login_ui_code, mcp_native_add, mcp_native_remove, mcp_native_status, mcp_open_auth_terminal, mcp_native_list, codex_mcp_native_list, codex_mcp_native_add, codex_mcp_native_remove, codex_mcp_native_status, codex_mcp_open_login_terminal
+from antigravity_cli import (
+    AntigravityCLI,
+    auth_login_ui_code as antigravity_auth_login_ui_code,
+    auth_login_ui_start as antigravity_auth_login_ui_start,
+    auth_logout as antigravity_auth_logout,
+    auth_status as antigravity_auth_status,
+    list_models as antigravity_list_models,
+)
 import config as cfgmod
 import update_state
 _ver_tuple = update_state.ver_tuple
@@ -764,6 +772,7 @@ async def auth_disable():
 # khác nhau ở ĐƯỜNG đi và ở việc chạy được lệnh máy hay không:
 #   kind=cli   (Claude Code)      - MCP native + Bash, chạy lệnh máy
 #   kind=oauth (ChatGPT qua Codex) - MCP native + kho MCP gốc Codex, chạy lệnh máy
+#   kind=agy   (Google Antigravity) - agent CLI native + MCP Hub qua cầu stdio
 #   kind=api   (OpenRouter/OpenAI/Anthropic/Gemini) - MCP qua hub trong vòng gọi tool
 #              (_api_stream_mcp), đọc/ghi brain bằng tool vault, KHÔNG chạy lệnh máy
 # ============================================================
@@ -772,6 +781,8 @@ PROVIDER_DEFS = [   # thứ tự = thứ tự hiển thị card ở trang Models
      "default_models": ["opus", "sonnet", "haiku", "fable"]},
     {"id": "openai-oauth",  "label": "OpenAI OAuth (ChatGPT)",  "kind": "oauth", "key_field": None,             "catalog_key": "openai-oauth",
      "default_models": []},  # model/list của Codex app-server là nguồn chân lý; không ghim version ở đây
+    {"id": "antigravity-cli", "label": "Google Antigravity CLI", "kind": "agy", "key_field": None,
+     "catalog_key": "antigravity-cli", "default_models": []},
     {"id": "openrouter",    "label": "OpenRouter",              "kind": "api", "key_field": "openrouter_key",    "catalog_key": "openrouter",
      "default_models": ["openai/gpt-4o-mini"]},
     {"id": "anthropic-api", "label": "Anthropic (API)",         "kind": "api", "key_field": "anthropic_api_key", "catalog_key": "anthropic-api",
@@ -801,6 +812,9 @@ def _effective_main(cfg):
     if main.get("provider"):
         return {"provider": main["provider"], "model": main.get("model") or ""}
     eng = m.get("engine")
+    if eng == "antigravity-cli":
+        return {"provider": "antigravity-cli",
+                "model": (m.get("catalog", {}).get("antigravity-cli") or [""])[0]}
     if eng == "openrouter":
         return {"provider": "openrouter", "model": m.get("openrouter_model") or ""}
     if eng == "anthropic-api":
@@ -818,6 +832,8 @@ def _providers_view(cfg):
         models = cat.get(p["catalog_key"]) or p.get("default_models", [])
         if p["kind"] == "oauth":
             configured = oauth_on
+        elif p["kind"] == "agy":
+            configured = bool(antigravity_auth_status().get("connected"))
         elif p["key_field"] is None:
             configured = True
         else:
@@ -847,6 +863,8 @@ def _set_main_model(cfg, provider, model):
         m["engine"] = "openai"
     elif provider == "openai-oauth":
         m["engine"] = "openai-oauth"
+    elif provider == "antigravity-cli":
+        m["engine"] = "antigravity-cli"
     elif provider == "gemini":
         m["engine"] = "gemini"
     elif provider == "groq":
@@ -933,7 +951,7 @@ def _api_stream(prov, key, model, messages, reasoning="off"):
 
     Chạy lại nằm ở đây chứ không nằm trong từng hàm engine vì đây là chỗ DUY NHẤT mọi đường
     chat không-tool đi qua: dashboard, Telegram, bot chuyên trách, việc nền, đường tắt. Một
-    chỗ sửa là tám bộ não cùng được.
+    chỗ sửa là mọi bộ não cùng được.
 
     Lỗi tạm thời là 429 và 5xx - nhà cung cấp đang quá tải hoặc mình vừa gọi hơi dày. Trước
     bản này chỉ OpenRouter tự thử lại, nên một cú 429 chớp nhoáng của Anthropic giết trọn
@@ -947,6 +965,9 @@ def _api_stream(prov, key, model, messages, reasoning="off"):
 
 def _api_stream_goc(prov, key, model, messages, reasoning="off"):
     """Chọn generator stream theo provider api-kind. reasoning=off|low|medium|high."""
+    if prov == "antigravity-cli":
+        import antigravity_cli
+        return antigravity_cli.messages_stream(model, messages, reasoning)
     if prov == "openrouter":
         return engine.openrouter_stream(key, model, messages, reasoning)
     if prov == "openai":
@@ -1849,7 +1870,8 @@ def _schedule_cancel_reply(action: dict) -> str:
 def _api_label(prov):
     return {"openrouter": "OpenRouter", "openai": "OpenAI", "anthropic-api": "Anthropic API",
             "openai-oauth": "ChatGPT (OAuth)", "gemini": "Google Gemini",
-            "groq": "Groq", "ollama": "Ollama"}.get(prov, prov)
+            "groq": "Groq", "ollama": "Ollama",
+            "antigravity-cli": "Google Antigravity CLI"}.get(prov, prov)
 
 def _reasoning_level(mcfg):
     r = (mcfg or {}).get("reasoning", "off")
@@ -2767,6 +2789,9 @@ async def _fetch_provider_models(provider, m):
         # app-server là subprocess đồng bộ; chạy ở worker để request FastAPI
         # khác không đứng hình trong lúc Codex nạp catalog.
         return await asyncio.to_thread(openai_oauth.list_models, openai_oauth.valid_creds())
+    if provider == "antigravity-cli":
+        live = await asyncio.to_thread(antigravity_list_models)
+        return (live or {}).get("models") or None
     if provider == "anthropic-cli":
         # Provider này chạy bằng đăng nhập OAuth của Claude Code → mượn chính token đó hỏi
         # /v1/models, nên Anthropic ra bản mới là picker thấy ngay (trước kẹt ở 4 alias tĩnh).
@@ -7250,11 +7275,13 @@ async def websocket_endpoint(ws: WebSocket):
                 "codex" if prov == "openai-oauth" else prov,
                 api_model or mcfg.get("claude_model") or "mặc định",
             )
-            if kind in ("cli", "oauth"):
+            if kind in ("cli", "oauth", "agy"):
                 _schedule_registry_discovery_shadow(
                     runtime_trace, brain, user_message,
-                    "codex" if prov == "openai-oauth" else "cli",
-                    api_model or mcfg.get("claude_model") or "mặc định", kind,
+                    "codex" if prov == "openai-oauth"
+                    else "antigravity" if prov == "antigravity-cli" else "cli",
+                    api_model or mcfg.get("claude_model") or "mặc định",
+                    "cli" if kind == "agy" else kind,
                 )
             _ctx_in = 0        # token VÀO của lượt này, để khung chat nói được nó tốn bao nhiêu
             _row0 = store.get_session(conv_sid) or {}
@@ -7328,14 +7355,15 @@ async def websocket_endpoint(ws: WebSocket):
             # hẳn nhánh engine chứ không chạy bên trong. Tính ở đây để chuỗi bên dưới chỉ còn
             # là một điều kiện, khỏi phải thụt lề lại cả hai nhánh. None = không đi đường tắt.
             _codex_fast_plan = None
-            if kind in ("oauth", "cli") and not _schedule_action:
+            if kind in ("oauth", "cli", "agy") and not _schedule_action:
                 try:
+                    _runtime_kind = "cli" if kind == "agy" else kind
                     _plan = await asyncio.to_thread(
                         _FAST_PATH.prepare, runtime_trace, user_message, _brain_root(brain),
                         "dashboard", prov,
                         _codex_safe_model(api_model) if kind == "oauth"
                         else (api_model or mcfg.get("claude_model") or "mặc định"),
-                        kind, bool(has_attachments),
+                        _runtime_kind, bool(has_attachments),
                     )
                     # Chỉ nhận "execute". "reject" của đường tắt là lời từ chối dựa trên
                     # TRẦN TỰ KHAI của gói thuê bao, không phải hạn mức nhà cung cấp nói ra -
@@ -7359,7 +7387,7 @@ async def websocket_endpoint(ws: WebSocket):
                     "session_id": conv_sid,
                     **_ctx_frame(runtime_trace, _ctx_in),
                 }))
-            elif _codex_fast_plan is not None and kind in ("oauth", "cli"):
+            elif _codex_fast_plan is not None and kind in ("oauth", "cli", "agy"):
                 # ===== GÓI THUÊ BAO, ĐƯỜNG TẮT: gọi thẳng model một vòng =====
                 # Câu hỏi không cần tra cứu gì thì không có lý do đi qua CLI, nơi mỗi lượt là
                 # cả một vòng lặp đọc file và gọi tool. Đây là chỗ token thật sự nằm: đo trên
@@ -7383,6 +7411,9 @@ async def websocket_endpoint(ws: WebSocket):
                     # này ĐÃ được lưu. Bản mồi lại có trần ký tự nên còn rẻ hơn mạch cũ.
                     store.clear_codex_thread_id(conv_sid)
                     store.set_cli_session_id(conv_sid, "")
+                    clear_agy = getattr(store, "clear_antigravity_conversation_id", None)
+                    if clear_agy:
+                        clear_agy(conv_sid)
                 else:
                     # Đường tắt về tay không. Với gói Claude Code đây là ca THẬT SỰ có thể
                     # xảy ra: nó gọi Messages API bằng access token của CLI, mà token đó có
@@ -7391,7 +7422,8 @@ async def websocket_endpoint(ws: WebSocket):
                     # đủ ngay trong lượt: chậm hơn, nhưng người dùng có câu trả lời.
                     _CONTEXT_RUNTIME.record_runtime_event(
                         runtime_trace, "fast_path.fallback_engine",
-                        {"engine": "codex" if kind == "oauth" else "claude-code"})
+                        {"engine": "codex" if kind == "oauth"
+                         else "antigravity" if kind == "agy" else "claude-code"})
                     # Trả lại chỗ ghim. Đường tắt đã ghim "fast" lúc nhận lượt; giữ nguyên là
                     # lượt CHẠY BẰNG engine đầy đủ vẫn đeo nhãn "Tức thì", và con số tiết kiệm
                     # bị thổi lên bằng đúng những lượt không hề tiết kiệm.
@@ -7524,6 +7556,127 @@ async def websocket_endpoint(ws: WebSocket):
                         "type": "response", "content": final_text, "engine": "codex",
                         "model": actual_model, "session_id": conv_sid,
                         **_ctx_frame(runtime_trace, _ctx_in)}))
+            elif prov == "antigravity-cli":
+                # ===== Google Antigravity CLI - agent native + MCP Hub của Javis =====
+                actual_model = api_model or ""
+                sysprompt, _sub_plan = await _subscription_system_prompt(
+                    "antigravity", actual_model or "mặc định", "cli")
+                acli = AntigravityCLI(
+                    cwd=_brain_root(brain),
+                    model=actual_model or None,
+                    tag=turn_tag,
+                    instructions=sysprompt,
+                    mode="full",
+                    expose_workspace=True,
+                    enable_mcp=True,
+                    reasoning=reasoning,
+                )
+                stored_agy = (_row0.get("antigravity_conversation_id") or "").strip()
+                if stored_agy and compaction.nen_mach_thue_bao(
+                        _row0.get("last_input_tokens"), msg_count=_row0.get("msg_count"),
+                        rotated_at=_row0.get("thread_rotated_msg")):
+                    stored_agy = ""
+                    store.clear_antigravity_conversation_id(conv_sid)
+                    store.mark_thread_rotated(conv_sid)
+                    _CONTEXT_RUNTIME.record_runtime_event(
+                        runtime_trace, "thread.rotated",
+                        {"engine": "antigravity",
+                         "last_input_tokens": int(_row0.get("last_input_tokens") or 0),
+                         "threshold": compaction.SUBSCRIPTION_THREAD_MAX_TOKENS})
+                acli.session_id = stored_agy or None
+                if not acli.is_available():
+                    await ws.send_text(json.dumps({
+                        "type": "error",
+                        "content": "Chưa cài Antigravity CLI. Cài lệnh `agy`, rồi kết nối ở trang Models.",
+                    }))
+                else:
+                    current = _cli_think(reasoning, user_message)
+                    raw_history = [
+                        {"role": item["role"], "content": item["content"]}
+                        for item in store.get_messages(conv_sid)[:-1]
+                        if item["role"] in ("user", "assistant") and item.get("content")
+                    ]
+                    agy_prompt = (
+                        current if stored_agy else
+                        compaction.bootstrap_prompt(
+                            raw_history, current,
+                            summary=_row0.get("compact_summary") or "")
+                    )
+
+                    async def _consume_antigravity(prompt, suppress_resume_error=False):
+                        nonlocal final_text, _ctx_in
+                        resume_failed = False
+                        _CONTEXT_RUNTIME.observe_payload(
+                            runtime_trace,
+                            [{"role": "system", "content": sysprompt},
+                             {"role": "user", "content": prompt}],
+                            provider="antigravity", model=actual_model or "mặc định",
+                        )
+                        async for event in acli.query(prompt):
+                            event_type = event.get("type")
+                            if event_type == "session" and event.get("session_id"):
+                                store.set_antigravity_conversation_id(
+                                    conv_sid, event["session_id"])
+                            elif event_type == "tool_call":
+                                await ws.send_text(json.dumps({
+                                    "type": "tool_call",
+                                    "tool": event.get("name", ""),
+                                    "content": f"⚙ {event.get('name', '')}",
+                                }))
+                            elif event_type == "tool_result":
+                                await ws.send_text(json.dumps({
+                                    "type": "tool_result",
+                                    "content": event.get("content", "")[:200],
+                                }))
+                            elif event_type == "text":
+                                final_text += event.get("content") or ""
+                                await ws.send_text(json.dumps({
+                                    "type": "stream",
+                                    "content": event.get("content") or "",
+                                    "tts": False,
+                                }))
+                            elif event_type == "final":
+                                final_text = event.get("content") or final_text
+                                if event.get("session_id"):
+                                    store.set_antigravity_conversation_id(
+                                        conv_sid, event["session_id"])
+                                _ctx_in += int(event.get("tokens_in", 0) or 0)
+                                usage_store.record(
+                                    "antigravity", actual_model or "mặc định",
+                                    event.get("tokens_in", 0), event.get("tokens_out", 0))
+                                _CONTEXT_RUNTIME.record_usage(
+                                    runtime_trace, event.get("tokens_in", 0),
+                                    event.get("tokens_out", 0))
+                            elif event_type == "error":
+                                if event.get("resume_failed"):
+                                    resume_failed = True
+                                    if suppress_resume_error:
+                                        continue
+                                await ws.send_text(json.dumps({
+                                    "type": "error", "content": event.get("content") or "Antigravity lỗi",
+                                }))
+                        return resume_failed
+
+                    resume_failed = await _consume_antigravity(
+                        agy_prompt, suppress_resume_error=bool(stored_agy))
+                    if stored_agy and resume_failed and not final_text:
+                        await ws.send_text(json.dumps({
+                            "type": "system",
+                            "content": "Phiên Antigravity cũ không còn - Javis đang khôi phục từ lịch sử đã lưu.",
+                        }))
+                        acli.session_id = None
+                        store.clear_antigravity_conversation_id(conv_sid)
+                        await _consume_antigravity(compaction.bootstrap_prompt(
+                            raw_history, current,
+                            summary=_row0.get("compact_summary") or ""))
+                    await ws.send_text(json.dumps({
+                        "type": "response",
+                        "content": final_text,
+                        "engine": "antigravity",
+                        "model": actual_model or "mặc định",
+                        "session_id": conv_sid,
+                        **_ctx_frame(runtime_trace, _ctx_in),
+                    }))
             elif (kind == "api" and api_key) or kind == "oauth":
                 orchestrator_plan = None
                 readonly_plan = None
@@ -8003,6 +8156,7 @@ async def websocket_endpoint(ws: WebSocket):
             mcfg = cfgmod.read_settings().get("model", {})
             prov, kind, api_key, api_model = _chat_provider(mcfg)
             engine_label = ("codex" if prov == "openai-oauth"
+                            else "antigravity" if prov == "antigravity-cli"
                             else prov if ((kind == "api" and api_key) or kind == "oauth")
                             else "cli")
             conv_sid = store.get_or_create(
@@ -8012,6 +8166,10 @@ async def websocket_endpoint(ws: WebSocket):
                 # Provider khác vừa chen một lượt: thread Codex cũ không chứa lượt này nữa.
                 # Xoá liên kết để lần quay lại Codex bootstrap từ SQLite thay vì resume mạch stale.
                 store.clear_codex_thread_id(conv_sid)
+            if engine_label != "antigravity":
+                clear_agy = getattr(store, "clear_antigravity_conversation_id", None)
+                if clear_agy:
+                    clear_agy(conv_sid)
             if _CHAT_RUNTIME.get_job(conv_sid):
                 await send_raw({"type": "error", "content": "Phiên này đang trả lời - đợi lượt hiện tại xong đã.", "session_id": conv_sid})
                 continue
@@ -8439,7 +8597,8 @@ def _engine_runtime_view(settings: dict) -> dict:
     try:
         prov, kind, _key, model = _chat_provider(cfgmod.read_settings().get("model", {}) or {})
         label = (_provider_def(prov) or {}).get("label") or prov
-        thue_bao = kind in ("cli", "oauth")
+        runtime_kind = "cli" if kind == "agy" else kind
+        thue_bao = runtime_kind in ("cli", "oauth")
         hop, khong = [], []
         for name, value in (settings or {}).items():
             if not (isinstance(value, dict) and "allocation_basis_points" in value):
@@ -8447,7 +8606,7 @@ def _engine_runtime_view(settings: dict) -> dict:
             if int(value.get("allocation_basis_points") or 0) <= 0:
                 continue
             kinds = [str(x) for x in (value.get("provider_kinds") or ["api"])]
-            (hop if kind in kinds else khong).append(name)
+            (hop if runtime_kind in kinds else khong).append(name)
         if not (hop or khong):
             giai_thich = "Chưa bật mảng nào, nên mọi lượt vẫn đi đường cũ. Chọn một mức ở trên."
         elif hop:
@@ -8457,7 +8616,7 @@ def _engine_runtime_view(settings: dict) -> dict:
         else:
             giai_thich = (f"Đã bật {len(khong)} mảng nhưng không mảng nào áp cho {label}, "
                           "nên thực tế chưa tiết kiệm được gì.")
-        return {"provider": prov, "nhan": label, "kind": kind, "model": model or "",
+        return {"provider": prov, "nhan": label, "kind": runtime_kind, "model": model or "",
                 "loai": "Gói thuê bao" if thue_bao else "API key",
                 "duong_hop": sorted(hop), "duong_khong_hop": sorted(khong),
                 "giai_thich": giai_thich}
@@ -9099,7 +9258,7 @@ def _tg_session(chat_id):
     s = _TG_SESS.get(key)
     if s is None:
         s = {
-            "cli": None, "codex": None, "or": None,
+            "cli": None, "codex": None, "antigravity": None, "or": None,
             "last": None, "sent": set(), "brain": None,
         }
         _TG_SESS[key] = s
@@ -9138,6 +9297,7 @@ def _tg_set_brain(chat_id, brain_path):
     if sess.get("cli"):
         sess["cli"].reset_session()
     sess["codex"] = None
+    sess["antigravity"] = None
     sess["or"] = None
     sess["last"] = None
     sess["sid"] = None     # brain khác = hội thoại khác → mở phiên mới trong kho, đừng trộn
@@ -9279,6 +9439,7 @@ async def _tg_answer(text, meta=None, progress=None, channel="telegram", bot=Non
     # Nhãn engine phải do VỎ quyết định rồi truyền xuống lõi: hai bên tự suy ra độc lập là
     # có ngày phiên bị dán nhãn 'cli' trong khi lượt thật chạy qua OpenRouter.
     engine_label = ("codex" if prov == "openai-oauth"
+                    else "antigravity" if prov == "antigravity-cli"
                     else prov if ((kind == "api" and api_key) or kind == "oauth")
                     else "cli")
 
@@ -9291,6 +9452,11 @@ async def _tg_answer(text, meta=None, progress=None, channel="telegram", bot=Non
             sess["codex"].session_id = None
         except Exception:
             sess["codex"] = None
+    if engine_label != "antigravity" and sess.get("antigravity") is not None:
+        try:
+            sess["antigravity"].session_id = None
+        except Exception:
+            sess["antigravity"] = None
 
     store = get_store()
     conv_sid = ""
@@ -9504,7 +9670,7 @@ async def _bot_tra_loi(text, *, sess, sysprompt, prov, api_key, api_model, reaso
     `sysprompt`, nên bỏ tool không làm bot mất khả năng đọc brain - chỉ bỏ khả năng đi lang
     thang trong đó.
 
-    `_api_stream` phục vụ đủ tám provider, kể cả hai gói subscription: ChatGPT OAuth đi
+    `_api_stream` phục vụ đủ mọi provider, kể cả các engine CLI: ChatGPT OAuth đi
     `openai_responses_stream`, Claude Code đi `anthropic_stream` với token OAuth mà chính CLI
     đã lưu. Không con nào phải mở CLI, nên cũng không con nào tốn thời gian khởi động CLI.
 
@@ -9574,6 +9740,13 @@ def _bot_stream_co_tool(prov, key, model, messages, reasoning, tools, route):
         return _api_stream(prov, key, model, messages, reasoning)
 
     def _vong():
+        if prov == "antigravity-cli":
+            import antigravity_cli
+            return antigravity_cli.messages_stream(
+                model, messages, reasoning,
+                cwd=route.get("__vault_root__") if isinstance(route, dict) else None,
+                mode=(route.get("__mode__") if isinstance(route, dict) else None) or "suggest",
+                expose_workspace=False, enable_mcp=True)
         if prov == "openrouter":
             return engine.openrouter_chat_with_mcp(key, model, messages, reasoning, tools, route)
         if prov == "openai":
@@ -9641,6 +9814,12 @@ async def _bot_tra_loi_co_tool(text, *, sess, sysprompt, prov, api_key, api_mode
     except Exception as e:
         print(f"[bot {prov} chat {chat_id}] nạp tool hỏng: {type(e).__name__}: {e}",
               file=__import__('sys').stderr)
+    # Antigravity tự discover MCP qua proxy, nhưng vẫn cần đúng brain + mức quyền của bot.
+    # Hai key nội bộ này không phải tool và không đi vào model.
+    if prov == "antigravity-cli":
+        route = dict(route or {})
+        route["__vault_root__"] = _brain_root(brain)
+        route["__mode__"] = muc_quyen
     _bot_ghim_duong(runtime_trace, prov, api_model, messages, tools)
 
     out, loi = await _bot_doc_stream(
@@ -9774,7 +9953,8 @@ async def _tg_answer_engine(text, meta, progress, *, chat_id, sess, brain, mcfg,
         _p8 = await asyncio.to_thread(
             _get_adaptive_context().prepare, runtime_trace, text, _brain_root(brain),
             str(conv_sid or chat_id), [], channel, prov,
-            api_model or mcfg.get("claude_model") or "mặc định", kind, _nen_goc)
+            api_model or mcfg.get("claude_model") or "mặc định",
+            "cli" if kind == "agy" else kind, _nen_goc)
         if _p8.action == "use":
             sysprompt = _p8.system_prompt
     except Exception as _e:
@@ -9789,11 +9969,13 @@ async def _tg_answer_engine(text, meta, progress, *, chat_id, sess, brain, mcfg,
     sysprompt += channel_context.build_channel_block(
         channel, meta, telegram_running=(channel == "telegram"), port=_javis_port(),
         brain_root=_brain_root(brain))
-    if kind in ("cli", "oauth"):
+    if kind in ("cli", "oauth", "agy"):
         _schedule_registry_discovery_shadow(
             runtime_trace, brain, text,
-            "codex" if prov == "openai-oauth" else "cli",
-            api_model or mcfg.get("claude_model") or "mặc định", kind,
+            "codex" if prov == "openai-oauth"
+            else "antigravity" if prov == "antigravity-cli" else "cli",
+            api_model or mcfg.get("claude_model") or "mặc định",
+            "cli" if kind == "agy" else kind,
         )
     schedule_action = await _schedule_cancel_action(text, brain)
     if schedule_action:
@@ -9807,7 +9989,8 @@ async def _tg_answer_engine(text, meta, progress, *, chat_id, sess, brain, mcfg,
         try:
             _fp = await asyncio.to_thread(
                 _FAST_PATH.prepare, runtime_trace, text, _brain_root(brain), channel, prov,
-                api_model or mcfg.get("claude_model") or "mặc định", kind, False)
+                api_model or mcfg.get("claude_model") or "mặc định",
+                "cli" if kind == "agy" else kind, False)
         except Exception as _e:
             _fp = None
             _CONTEXT_RUNTIME.record_runtime_event(
@@ -9824,6 +10007,87 @@ async def _tg_answer_engine(text, meta, progress, *, chat_id, sess, brain, mcfg,
             # xuống engine đầy đủ bên dưới, người dùng vẫn có câu trả lời.
             if _txt.strip():
                 return {"text": channel_context.strip_control_blocks(_txt), "files": []}
+
+    if prov == "antigravity-cli":
+        acli = sess.get("antigravity")
+        if acli is None:
+            acli = AntigravityCLI(
+                cwd=_brain_root(brain),
+                model=api_model or None,
+                tag=f"telegram:{chat_id}",
+                instructions=sysprompt,
+                mode="full",
+                expose_workspace=True,
+                enable_mcp=True,
+                reasoning=reasoning,
+            )
+            if store is not None and conv_sid:
+                try:
+                    row = store.get_session(conv_sid) or {}
+                    acli.session_id = (
+                        row.get("antigravity_conversation_id") or "").strip() or None
+                except Exception:
+                    pass
+            sess["antigravity"] = acli
+        else:
+            acli.cwd = _brain_root(brain)
+            acli.model = api_model or None
+            acli.instructions = sysprompt
+            acli.reasoning = reasoning
+        if not acli.is_available():
+            return "⚠ Chưa cài Antigravity CLI. Cài lệnh `agy`, rồi kết nối ở trang Models."
+
+        t0 = time.time()
+        out, streamed, errors, written = "", "", [], []
+        current = _cli_think(reasoning, text)
+        if not acli.session_id:
+            raw_history = []
+            if store is not None and conv_sid:
+                try:
+                    raw_history = [
+                        {"role": item["role"], "content": item["content"]}
+                        for item in store.get_messages(conv_sid)[:-1]
+                        if item.get("role") in ("user", "assistant") and item.get("content")
+                    ]
+                except Exception:
+                    raw_history = []
+            current = compaction.bootstrap_prompt(raw_history, current)
+
+        async for event in acli.query(current):
+            event_type = event.get("type")
+            if event_type == "session" and event.get("session_id") and store and conv_sid:
+                setter = getattr(store, "set_antigravity_conversation_id", None)
+                if setter:
+                    setter(conv_sid, event["session_id"])
+            elif event_type == "tool_call":
+                await _p(f"⚙ Đang gọi: {event.get('name', '')}")
+                try:
+                    written.extend(
+                        channel_context.candidate_paths_from_tool(event.get("item")))
+                except Exception:
+                    pass
+            elif event_type == "text":
+                streamed += event.get("content") or ""
+                await _p("✍ Đang soạn câu trả lời…")
+            elif event_type == "final":
+                out = event.get("content") or out
+                usage_store.record(
+                    "antigravity", api_model or "mặc định",
+                    event.get("tokens_in", 0), event.get("tokens_out", 0))
+                _CONTEXT_RUNTIME.record_usage(
+                    runtime_trace, event.get("tokens_in", 0), event.get("tokens_out", 0))
+            elif event_type == "error":
+                errors.append(str(event.get("content") or "Antigravity lỗi"))
+        out = out or streamed
+        if not out:
+            return "⚠ " + (errors[0] if errors else "Antigravity không trả về nội dung nào.")
+        files = channel_context.collect_turn_files(
+            out, written, t0, cwd=_brain_root(brain), exclude=sess["sent"],
+            vault_root=_brain_root(brain),
+        )
+        clean = channel_context.strip_attached_media(
+            channel_context.strip_control_blocks(out), files, _brain_root(brain))
+        return _tg_ket(clean, files, "", errors)
 
     if prov == "openai-oauth":
         # Telegram dùng cùng Codex CLI + MCP native như dashboard. Trước đây nhánh OAuth
@@ -10095,6 +10359,7 @@ async def _tg_skills_text(brain):
 _TG_PROVIDERS = [   # (id provider, nhãn nút ngắn)
     ("anthropic-cli", "Claude Code"),
     ("openai-oauth", "ChatGPT"),
+    ("antigravity-cli", "Antigravity"),
     ("openrouter", "OpenRouter"),
     ("anthropic-api", "Claude API"),
     ("openai", "OpenAI API"),
@@ -10114,6 +10379,8 @@ def _tg_prov_ready(pid, m):
     if d.get("kind") == "oauth":
         o = m.get("openai_oauth") or {}
         return bool(o.get("access_token") or o.get("refresh_token"))
+    if d.get("kind") == "agy":
+        return bool(antigravity_auth_status().get("connected"))
     kf = d.get("key_field")
     return True if kf is None else bool(m.get(kf))
 
@@ -10282,6 +10549,7 @@ async def _tg_callback(data, chat=None):
         _set_main_model(s, pid, mdl); cfgmod.write_settings(s)
         note = {"anthropic-cli": "Claude Code - đầy đủ MCP/skill",
                 "openai-oauth": "ChatGPT qua Codex CLI - có MCP",
+                "antigravity-cli": "Google Antigravity CLI - agent + MCP Javis",
                 "openrouter": "OpenRouter - chat + MCP đa-model",
                 "anthropic-api": "Claude API - chat + MCP đa-model",
                 "openai": "OpenAI API - chat + MCP đa-model"}.get(pid, pid)
@@ -10304,6 +10572,7 @@ async def _tg_command(cmd, arg, chat=None, meta=None):
             if sess.get("cli"):
                 sess["cli"].reset_session()
             sess["codex"] = None
+            sess["antigravity"] = None
             sess["or"] = None
             sess["last"] = None
             sess["sid"] = None     # hội thoại mới → phiên mới trong kho, khỏi nối vào mạch cũ
@@ -11050,6 +11319,36 @@ async def telegram_send_file(payload: dict = Body(...)):
         except Exception:
             pass
     return {"ok": ok, "error": err}
+
+
+# ---- Google Antigravity CLI auth (provider antigravity-cli) ----
+# Đặt cuối bảng route để thêm provider không làm đổi thứ tự 222 endpoint cũ.
+@app.get("/antigravity/status")
+def antigravity_status():
+    return antigravity_auth_status()
+
+
+@app.post("/antigravity/login-start")
+def antigravity_login_start():
+    """Khởi động Google Sign-In của ``agy`` và trả URL cho UI/VPS headless."""
+    return antigravity_auth_login_ui_start()
+
+
+@app.post("/antigravity/login-code")
+def antigravity_login_code(code: str = Form("")):
+    return antigravity_auth_login_ui_code(code)
+
+
+@app.post("/antigravity/logout")
+def antigravity_logout():
+    result = antigravity_auth_logout()
+    if not result.get("ok"):
+        return result
+    cfg = cfgmod.read_settings()
+    if _effective_main(cfg).get("provider") == "antigravity-cli":
+        _set_main_model(cfg, "anthropic-cli", cfg["model"].get("claude_model") or "opus")
+        cfgmod.write_settings(cfg)
+    return result
 
 
 @app.on_event("startup")

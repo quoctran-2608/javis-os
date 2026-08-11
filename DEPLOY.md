@@ -1,7 +1,7 @@
 # Cài đặt Javis OS trên server / VPS
 
-Javis OS là một AI agent cá nhân + Second Brain. "Bộ não" của nó là **Claude Code CLI**
-(đăng nhập một lần, không cần API key). Có 3 cách chạy - chọn 1.
+Javis OS là một AI agent cá nhân + Second Brain. Bộ não có thể là **Claude Code CLI**,
+**Codex CLI**, **Google Antigravity CLI** hoặc provider API. Có 3 cách chạy - chọn 1.
 
 > ⚠️ **An toàn:** Javis chạy Claude với toàn quyền trên máy. Khi chạy public (Docker/VPS/Hostinger),
 > Javis **tự bật bắt buộc đăng nhập** - mở app ra là màn **tạo tài khoản admin / đăng nhập**, không
@@ -206,7 +206,7 @@ Trên máy Windows của bạn, đẩy code lên GitHub: `git add -A && git comm
 
 ---
 
-## Đăng nhập Claude là bước duy nhất bắt buộc
+## Đăng nhập bộ não CLI
 
 "Bộ não" của Javis là Claude Code CLI. Token đăng nhập nằm trong `~/.claude`
 (Docker: volume `claude-auth`). Đăng nhập 1 lần → tồn tại qua mọi restart/update.
@@ -219,3 +219,13 @@ mở **App terminal** chạy `codex login` (mở link, đăng nhập ChatGPT). T
 (Docker: volume `codex-auth`) → giữ qua mọi update. Kiểm tra: `codex --version`. Sau đó vào
 **Models → Đổi model → ChatGPT** là chat dùng được. (ChatGPT-qua-codex là thử nghiệm; muốn ổn
 định/đa model hơn thì dùng **OpenRouter** - 1 key mọi model - hoặc Claude.)
+
+## (Tuỳ chọn) Dùng Google Antigravity CLI
+
+Antigravity CLI được cài best-effort trong Docker image và installer native. Mở **Models**,
+tìm card **Google Antigravity CLI**, bấm **Đăng nhập Google**, mở link rồi dán authorization
+code. Danh sách model lấy live từ `agy models`; model đã chọn chạy qua print mode
+`stream-json`, resume bằng `conversation_id`, và gọi MCP Hub của Javis qua proxy stdio.
+
+Credential/config nằm trong `~/.gemini` (Docker: volume `antigravity-auth`) nên không mất khi
+restart hoặc redeploy. Kiểm tra trong App terminal: `agy --version` và `agy models`.
