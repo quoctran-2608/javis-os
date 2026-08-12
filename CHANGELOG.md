@@ -4,9 +4,9 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 Định dạng: mỗi phiên bản là một khối `## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
 
-## [0.28.2] - 2026-08-12
+## [0.28.3] - 2026-08-12
 ### Thêm mới
-- **Nhận trọn dải upstream tới `0.28.1`.** Bản fork có thanh mốc hội thoại trên desktop/mobile, xác thực 2 lớp bằng app Authenticator và mã khôi phục, cài nhiều bản Javis trên cùng VPS, đặt sẵn tài khoản admin khi cài, cùng các sửa lỗi UI cho nhật ký cập nhật, link Markdown, tab thư mục mobile và bot chuyên trách.
+- **Nhận trọn dải upstream tới `0.28.2` (`ac8b2b2`).** Bản fork có thanh mốc hội thoại trên desktop/mobile, xác thực 2 lớp bằng app Authenticator và mã khôi phục, cài nhiều bản Javis trên cùng VPS, đặt sẵn tài khoản admin khi cài, cùng các sửa lỗi UI cho nhật ký cập nhật, link Markdown, tab thư mục mobile và bot chuyên trách.
 - **Claude Code có lựa chọn xác thực rõ ràng.** Chủ máy có thể dùng phiên subscription qua đúng binary `claude` hoặc chuyển sang Anthropic API key; Javis không còn tự đọc token đăng nhập Claude để dựng request API.
 
 ### Sửa lỗi
@@ -22,8 +22,9 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 - **Khung chat mobile dồn tên model và nút phóng to về bên trái**, đồng thời chặn tên model dài đẩy nút ra ngoài màn hình.
 
 ### Kiểm thử
-- Full suite trước metadata và sau xử lý conflict chạy xanh **212/212** trên Linux/WSL với dependency đúng `requirements.txt`, state test cô lập và toàn bộ JavaScript canary.
-- Merge commit giữ đủ hai parent: fork `63fcbd3` và upstream `cca9cc1`; không còn marker conflict, file unmerged hay thay đổi chưa kiểm chứng.
+- Full suite sau khi nhập upstream mới nhất chạy xanh **213/213** trên Linux/WSL với dependency đúng `requirements.txt`, state test cô lập và toàn bộ JavaScript canary.
+- Canary MCP kiểm trực tiếp năm coroutine cùng chạy qua barrier, không còn phụ thuộc đồng hồ tường dễ nhiễu trên WSL; bản ép tuần tự đã được kiểm chứng ngược là phải đỏ.
+- Merge mới nhất giữ đủ hai parent: fork đã hợp nhất và upstream `ac8b2b2`; không còn marker conflict, file unmerged hay thay đổi chưa kiểm chứng.
 
 ## [0.27.3] - 2026-08-12
 ### Sửa lỗi
