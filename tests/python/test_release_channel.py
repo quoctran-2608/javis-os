@@ -24,7 +24,7 @@ publish = (ROOT / ".github" / "workflows" / "docker-publish.yml").read_text(
 requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
 version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
-check("release là 0.27.3", version == "0.27.3")
+check("release là 0.28.2", version == "0.28.2")
 
 dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 compat = (ROOT / "system" / "agy-compatible.sh").read_text(encoding="utf-8")
@@ -71,6 +71,15 @@ runtime_files = {
 }
 check("runtime không còn pull image upstream cũ",
       not any(old_image in text for text in runtime_files.values()))
+
+deploy = (ROOT / "DEPLOY.md").read_text(encoding="utf-8")
+multi = (ROOT / "docker-compose.multi.yml").read_text(encoding="utf-8")
+proxy = (ROOT / "docker-compose.proxy.yml").read_text(encoding="utf-8")
+console = (ROOT / "dashboard" / "console.js").read_text(encoding="utf-8")
+check("URL tải compose production không quay về upstream",
+      "raw.githubusercontent.com/blogminhquy/javis-os" not in deploy + multi + proxy)
+check("link tài liệu trong dashboard không quay về upstream",
+      "github.com/blogminhquy/javis-os" not in console)
 
 print()
 if fails:

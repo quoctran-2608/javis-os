@@ -16,6 +16,8 @@ Javis OS **không phải** một chatbot. Nó là một **AI agentic tự host**
 
 **Bộ não thì bạn chọn, và đổi lúc nào cũng được.** Chín provider dùng được ngay: **Claude Code**, **ChatGPT/Codex** và **Google Antigravity CLI** (đăng nhập tài khoản tương ứng, không cần API key riêng), cùng **OpenRouter · OpenAI API · Google Gemini · Anthropic API · Groq · Ollama Cloud**.
 
+> ⚠️ **Đọc trước khi cho gói subscription chạy việc nền.** Anthropic chỉ tính gói Claude Pro/Max cho việc dùng **cá nhân, thông thường** của Claude Code. Chạy nền liên tục (loop, nhắc hẹn, việc Kanban, chatbot), chạy trên VPS, hoặc nhiều người dùng chung một tài khoản đều nằm ngoài phạm vi đó, và đã có người **bị khoá tài khoản** vì lý do này. Javis không tự đọc token đăng nhập của bạn (đường đó đã gỡ ở upstream 0.26.17) - nó chạy qua đúng binary `claude`, nhưng như vậy vẫn không làm việc chạy nền 24/7 trở thành hợp lệ. Muốn yên tâm: ở trang **Models**, đặt Claude Code chạy bằng **API key**, hoặc trỏ **model việc nền** sang một provider khác. Xem `server/claude_auth.py`.
+
 > Triết lý: **năng lực nằm ở Javis, không nằm ở model.** Mọi bộ não đều được cấp cùng bộ đồ nghề qua trung tâm kết nối (MCP Hub) chung - MCP đã đấu, tool đọc/ghi brain, skill, việc Kanban, agent/workflow/loop/nhắc hẹn. Khác biệt duy nhất: ba engine CLI chạy thêm được **lệnh máy**. Đổi từ Claude sang Gemini không làm Javis mất chức năng nào ngoài chuyện đó.
 
 Bạn đấu các **kết nối** của riêng mình vào (bán hàng/POS, quảng cáo, lịch, email, Zalo, ghi chú…) → Javis tự phát hiện và **báo cáo kinh doanh + cuộc sống** bằng số liệu thật, nói chuyện như người.
@@ -117,6 +119,19 @@ Script tự cài Python + Node + Claude CLI + Antigravity CLI (best-effort), t�
 4. Mở http://localhost:7777   ·   Dừng: stop-javis.bat
 ```
 
+### Nhiều bản Javis trên cùng một VPS (mỗi bản một link riêng)
+
+Chạy được bao nhiêu bản cũng được - brain, cài đặt và tài khoản của mỗi bản tách bạch hoàn toàn.
+Chỉ cần ba giá trị khác nhau giữa các bản: `JAVIS_NAME`, `JAVIS_HOST_PORT`, `DOMAIN_NAME`.
+
+- **Hostinger:** deploy `docker-compose.hostinger.yml` thành stack thứ hai, điền ba ô đó.
+- **VPS tự quản:** chạy proxy dùng chung `docker-compose.proxy.yml` **một lần cho cả máy**, rồi
+  mỗi bản một thư mục riêng dùng kèm `docker-compose.multi.yml`. Proxy tự phát hiện bản mới,
+  tự xin SSL - thêm bản không phải sửa gì ở proxy.
+- **Native:** `JAVIS_NAME=javis-shop JAVIS_PORT=7778 ./install.sh`.
+
+Bỏ trống các biến = y hệt cách cài cũ. Từng bước một: **[DEPLOY.md](DEPLOY.md)**.
+
 📄 Chi tiết hơn (named tunnel URL cố định, build từ source…) xem **[DEPLOY.md](DEPLOY.md)**.
 
 ---
@@ -126,7 +141,7 @@ Script tự cài Python + Node + Claude CLI + Antigravity CLI (best-effort), t�
 Mở Javis → bộ cài đặt sẽ dẫn bạn qua:
 
 1. **Tài khoản admin** - đặt mật khẩu (bắt buộc khi chạy public, để chặn người lạ).
-2. **Chọn bộ não** - engine CLI đăng nhập 1 lần, không cần API key: Claude Code lưu token trong `~/.claude`, ChatGPT/Codex trong `~/.codex`, Antigravity trong `~/.gemini` (Docker đều có volume riêng). ChatGPT và Antigravity đăng nhập ngay trong trang **Models**. Đi bằng API key thì chỉ dán key OpenRouter / OpenAI / Gemini / Anthropic là xong.
+2. **Chọn bộ não** - engine CLI đăng nhập 1 lần: Claude Code lưu phiên trong `~/.claude`, ChatGPT/Codex trong `~/.codex`, Antigravity trong `~/.gemini` (Docker đều có volume riêng). ChatGPT và Antigravity đăng nhập ngay trong trang **Models**. Ở thẻ Claude Code, mục **Chạy bằng** cho phép giữ gói subscription hoặc chuyển sang API key Anthropic. Các provider API khác chỉ cần dán key tương ứng.
 3. **Chọn model** - mặc định chọn sẵn Claude Code, nhưng đổi sang nhà cung cấp nào trong **Models** cũng được và **không mất chức năng nào** (trừ chạy lệnh máy, vốn chỉ có ở ba engine CLI).
 4. **Đấu kết nối** (tuỳ chọn) - vào **Kết nối**, chọn dịch vụ trong Kho rồi dán key hoặc quét QR. Javis sẽ báo cáo số liệu thật từ đó.
 

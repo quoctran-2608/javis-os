@@ -56,7 +56,9 @@ _update_outcome = update_state.update_outcome
 import git_brain
 import engine
 import openai_oauth
-import claude_models   # model Claude LIVE cho provider anthropic-cli (mượn token OAuth của Claude Code)
+import claude_models   # model Claude LIVE cho provider anthropic-cli (hỏi bằng API key, nếu có)
+import totp            # xác thực 2 lớp (TOTP) cho cổng đăng nhập - thuần toán, không đụng cấu hình
+import claude_auth     # gói Claude Code xác thực bằng gì: phiên subscription hay API key
 import aux_engine   # engine việc nền: Claude / Codex / API rẻ
 import mcp_store
 import mcp_client
@@ -654,6 +656,11 @@ def _session_cookie(resp, token, request=None):
     return resp
 
 
+def _env_bat(ten: str) -> bool:
+    """Biến môi trường có đang bật không (1/true/yes/on). Dùng cho cờ gợi ý, không phải rào."""
+    return (os.getenv(ten, "") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 @app.get("/auth/status")
 async def auth_status(request: Request):
     cfg = cfgmod.read_settings()
@@ -664,6 +671,14 @@ async def auth_status(request: Request):
     authed = has_session or (not enabled and not require)
     return {"needs_setup": not enabled, "auth_required": enabled or require,
             "require_login": require, "authed": authed,
+            # 2FA lộ ra ở đây là CỐ Ý và không phải rò rỉ: màn đăng nhập cần biết có hỏi ô mã
+            # hay không, mà việc "tài khoản này có 2FA" thì kẻ tấn công cũng biết ngay sau lần
+            # nhập mật khẩu đầu tiên. Số mã khôi phục còn lại thì chỉ trả khi ĐÃ đăng nhập.
+            "totp_enabled": cfgmod.totp_enabled(cfg),
+            "totp_recovery_left": (cfgmod.totp_recovery_left(cfg) if authed else None),
+            # install.sh có thể ghi JAVIS_SETUP_2FA=1 vào .env khi người cài chọn bật 2FA.
+            # Đây chỉ là LỜI NHẮC cho giao diện mở sẵn màn bật, không phải một cơ chế bảo mật.
+            "totp_suggested": (_env_bat("JAVIS_SETUP_2FA") and not cfgmod.totp_enabled(cfg)),
             "username": (cfg.get("auth", {}).get("username", "") if authed else "")}
 
 
@@ -706,7 +721,13 @@ def _login_fail(ip):
 
 
 @app.post("/auth/login")
-async def auth_login(request: Request, username: str = Form(...), password: str = Form(...)):
+async def auth_login(request: Request, username: str = Form(...), password: str = Form(...),
+                     code: str = Form("")):
+    """Đăng nhập. `code` chỉ cần khi đã bật 2FA - nhận CẢ mã 6 số lẫn mã khôi phục.
+
+    Thứ tự kiểm CÓ CHỦ Ý: mật khẩu trước, mã sau. Đảo lại là biến ô mã thành một máy dò xem
+    tài khoản nào đã bật 2FA, cho người còn chưa biết mật khẩu.
+    """
     ip = request.client.host if request.client else "?"
     if _login_locked(ip):
         return JSONResponse({"ok": False, "error": "Quá nhiều lần sai - thử lại sau ít phút."}, status_code=429)
@@ -717,8 +738,135 @@ async def auth_login(request: Request, username: str = Form(...), password: str 
         _login_fail(ip)
         await asyncio.sleep(0.5)   # làm chậm brute-force online
         return JSONResponse({"ok": False, "error": "Sai tài khoản hoặc mật khẩu"}, status_code=401)
+    if cfgmod.totp_enabled(cfg):
+        ma = (code or "").strip()
+        if not ma:
+            # 401 kèm needs_2fa để giao diện hiện ô mã. KHÔNG tính là một lần sai: người dùng
+            # chưa gõ gì cả, tính vào hạn mức là tự khoá chính chủ sau vài lần mở màn đăng nhập.
+            return JSONResponse({"ok": False, "needs_2fa": True,
+                                 "error": "Nhập mã xác thực 2 lớp."}, status_code=401)
+        buoc = totp.kiem(cfgmod.totp_secret(cfg), ma,
+                         buoc_da_dung=cfgmod.totp_last_step(cfg))
+        if buoc is not None:
+            cfgmod.totp_ghi_buoc(buoc)
+        elif cfgmod.totp_dung_ma_khoi_phuc(ma):
+            con = cfgmod.totp_recovery_left()
+            print(f"[auth] đăng nhập bằng MÃ KHÔI PHỤC, còn {con} mã", file=__import__('sys').stderr)
+        else:
+            _login_fail(ip)
+            await asyncio.sleep(0.5)
+            return JSONResponse({"ok": False, "needs_2fa": True,
+                                 "error": "Mã xác thực không đúng hoặc đã dùng rồi."},
+                                status_code=401)
     _LOGIN_FAILS.pop(ip, None)
     return _session_cookie(JSONResponse({"ok": True}), cfgmod.new_session(), request)
+
+
+# ---- Xác thực 2 lớp: bật / xác nhận / tắt ----
+# MỌI endpoint dưới đây đòi SESSION trình duyệt, không nhận token API. Cùng lý do với
+# /auth/tokens: cho token đổi được cách đăng nhập thì một token rò ra là kẻ cầm nó tự gắn 2FA
+# của mình vào rồi khoá chính chủ ra ngoài.
+def _doi_phien_that(request: Request):
+    if cfgmod.gate_active() and not cfgmod.valid_session(request.cookies.get("javis_session", "")):
+        return JSONResponse({"ok": False, "error": "Thao tác này phải đăng nhập bằng trình duyệt."},
+                            status_code=403)
+    return None
+
+
+def _ten_hien_thi(cfg=None) -> str:
+    """Tên NGƯỜI để hiện trong app Authenticator, sau tên workspace: "Javis OS: Minh Quý".
+
+    Thứ tự ưu tiên có lý do: `USER_NAME` là tên người dùng tự đặt cho chính mình, còn
+    `auth.username` là tên ĐĂNG NHẬP - thường là "admin", đúng về kỹ thuật nhưng vô nghĩa khi
+    nằm trong danh sách chục tài khoản 2FA trên điện thoại.
+
+    Bỏ qua giá trị mặc định "Bạn" của env: nó là chỗ giữ chỗ, không phải tên ai cả.
+    """
+    cfg = cfg if cfg is not None else cfgmod.read_settings()
+    ten = (os.getenv("USER_NAME", "") or "").strip()
+    if ten and ten.lower() not in ("bạn", "ban", "you", "user"):
+        return ten
+    return (cfg.get("auth", {}) or {}).get("username") or "admin"
+
+
+# Secret ĐANG CHỜ xác nhận, giữ trong RAM chứ không ghi settings. Ghi xuống đĩa trước khi
+# người dùng chứng minh app của họ sinh đúng mã là để lại một secret nửa vời trong file cấu
+# hình; restart giữa chừng thì nó nằm đó mãi mà chẳng ai dùng.
+_TOTP_CHO = {}          # {"secret": str, "ts": float}
+_TOTP_CHO_TTL = 15 * 60
+
+
+@app.post("/auth/2fa/start")
+async def auth_2fa_start(request: Request):
+    """Sinh secret MỚI (chưa bật) + QR để quét. Gọi lại là sinh cái khác, cái cũ bỏ đi."""
+    if (loi := _doi_phien_that(request)) is not None:
+        return loi
+    cfg = cfgmod.read_settings()
+    if cfgmod.totp_enabled(cfg):
+        return JSONResponse({"ok": False, "error": "2FA đang bật rồi - tắt trước nếu muốn đổi."},
+                            status_code=400)
+    secret = totp.sinh_secret()
+    _TOTP_CHO.clear()
+    _TOTP_CHO.update(secret=secret, ts=time.time())
+    uri = totp.otpauth_uri(secret, _ten_hien_thi(cfg),
+                           cfg.get("workspace_name") or "Javis OS")
+    return {"ok": True, "secret": secret, "uri": uri, "qr_svg": totp.qr_svg(uri)}
+
+
+@app.post("/auth/2fa/enable")
+async def auth_2fa_enable(request: Request, code: str = Form(...)):
+    """Xác nhận bằng một mã đúng rồi mới BẬT. Trả mã khôi phục đúng MỘT lần."""
+    if (loi := _doi_phien_that(request)) is not None:
+        return loi
+    cho = dict(_TOTP_CHO)
+    if not cho.get("secret") or time.time() - float(cho.get("ts") or 0) > _TOTP_CHO_TTL:
+        return JSONResponse({"ok": False, "error": "Phiên bật 2FA đã hết hạn - bấm Bật lại."},
+                            status_code=400)
+    buoc = totp.kiem(cho["secret"], code)
+    if buoc is None:
+        return JSONResponse({"ok": False, "error": "Mã không đúng. Kiểm tra giờ trên điện thoại "
+                                                   "rồi nhập mã đang hiện."}, status_code=400)
+    ma_khoi_phuc = totp.sinh_ma_khoi_phuc()
+    cfgmod.totp_set(secret=cho["secret"], enabled=True, recovery=ma_khoi_phuc, last_step=buoc)
+    _TOTP_CHO.clear()
+    return {"ok": True, "recovery": ma_khoi_phuc}
+
+
+@app.post("/auth/2fa/disable")
+async def auth_2fa_disable(request: Request, password: str = Form(...), code: str = Form("")):
+    """Tắt 2FA. Đòi mật khẩu VÀ một mã đúng (hoặc mã khôi phục).
+
+    Đòi cả hai vì đây là thao tác HẠ bảo mật: ai đó mượn được máy đang mở sẵn dashboard mà tắt
+    được 2FA chỉ bằng một cú bấm thì lớp thứ hai coi như không có.
+    """
+    if (loi := _doi_phien_that(request)) is not None:
+        return loi
+    cfg = cfgmod.read_settings()
+    if not cfgmod.totp_enabled(cfg):
+        return {"ok": True, "note": "2FA vốn đã tắt"}
+    if not cfgmod.verify_password(password, cfg):
+        return JSONResponse({"ok": False, "error": "Sai mật khẩu."}, status_code=401)
+    ma = (code or "").strip()
+    if totp.kiem(cfgmod.totp_secret(cfg), ma, buoc_da_dung=cfgmod.totp_last_step(cfg)) is None \
+            and not cfgmod.totp_dung_ma_khoi_phuc(ma):
+        return JSONResponse({"ok": False, "error": "Mã xác thực không đúng."}, status_code=401)
+    cfgmod.totp_tat()
+    return {"ok": True}
+
+
+@app.post("/auth/2fa/recovery")
+async def auth_2fa_recovery(request: Request, password: str = Form(...)):
+    """Sinh LẠI bộ mã khôi phục (bộ cũ hết hiệu lực ngay). Dùng khi lỡ mất tờ giấy cũ."""
+    if (loi := _doi_phien_that(request)) is not None:
+        return loi
+    cfg = cfgmod.read_settings()
+    if not cfgmod.totp_enabled(cfg):
+        return JSONResponse({"ok": False, "error": "2FA chưa bật."}, status_code=400)
+    if not cfgmod.verify_password(password, cfg):
+        return JSONResponse({"ok": False, "error": "Sai mật khẩu."}, status_code=401)
+    ma_khoi_phuc = totp.sinh_ma_khoi_phuc()
+    cfgmod.totp_set(secret=None, recovery=ma_khoi_phuc)
+    return {"ok": True, "recovery": ma_khoi_phuc}
 
 
 @app.get("/auth/tokens")
@@ -848,6 +996,13 @@ def _providers_view(cfg):
         if p["kind"] == "oauth":
             item["account"] = oauth.get("account_id", "")
             item["plan"] = oauth.get("plan", "")
+        if p["id"] == "anthropic-cli":
+            # Gói Claude Code chạy bằng gì, và có đang gánh việc nền không. Trang Models vẽ ô
+            # chọn + cảnh báo từ ba field này. Cảnh báo đi kèm DỮ LIỆU chứ không hardcode ở
+            # dashboard: chỉ server mới biết model việc nền đang trỏ vào đâu.
+            item["auth_mode"] = claude_auth.che_do(cfg)
+            item["auth_api_key_set"] = bool(claude_auth.api_key(cfg))
+            item["auth_warning"] = claude_auth.canh_bao_neu_can(cfg)
         out.append(item)
     return out
 
@@ -963,6 +1118,123 @@ def _api_stream(prov, key, model, messages, reasoning="off"):
         nhan=f"{prov}/{model or 'mặc định'}")
 
 
+# Allowlist rỗng-thật cho engine Claude Code: bật cổng `can_use_tool` mà không tool nào khớp,
+# nên MỌI tool bị từ chối per-call. Danh sách rỗng [] KHÔNG dùng được - nó falsy nên engine rơi
+# vào nhánh bypassPermissions, tức mở toang đúng cái ta đang muốn đóng.
+CLAUDE_SUB_KHONG_TOOL = ["__javis_claude_sub_khong_tool__"]
+
+
+def _claude_sub_tach(messages):
+    """messages kiểu API -> (system, prompt) cho engine Claude Code.
+
+    Engine Claude Code nhận MỘT prompt chứ không nhận mảng messages, nên lịch sử được gói lại
+    bằng chính `compaction.bootstrap_prompt` mà nhánh Codex và nhánh xoay-mạch vẫn dùng.
+    """
+    sys_txt = "\n\n".join((m.get("content") or "") for m in messages
+                          if m.get("role") == "system").strip()
+    conv = [{"role": m["role"], "content": m.get("content") or ""}
+            for m in messages
+            if m.get("role") in ("user", "assistant") and (m.get("content") or "").strip()]
+    if not conv:
+        return sys_txt, "(tiếp tục)"
+    if conv[-1]["role"] == "user":
+        return sys_txt, compaction.bootstrap_prompt(conv[:-1], conv[-1]["content"])
+    return sys_txt, compaction.bootstrap_prompt(conv, "(tiếp tục)")
+
+
+async def _claude_sub_doc(cli, prompt, model):
+    """Đọc một lượt engine Claude Code -> đúng hợp đồng sự kiện của `_api_stream`.
+
+    `final` mang TOÀN VĂN câu trả lời, còn `text` là từng mảnh của chính văn bản đó - phát cả
+    hai là người dùng đọc câu trả lời hai lần. Nên `final` chỉ được phát chữ khi chưa mảnh nào
+    đi qua (lượt không stream), và luôn là chỗ chốt usage.
+    """
+    yield {"type": "meta", "model": model}
+    da_co_chu = False
+    async for ev in cli.query(prompt):
+        et = ev.get("type")
+        if et == "text":
+            txt = ev.get("content") or ""
+            if txt:
+                da_co_chu = True
+                yield {"type": "text", "content": txt}
+        elif et == "tool_call":
+            yield {"type": "tool_call", "tool": ev.get("name") or "",
+                   "content": f"⚙ {ev.get('name') or 'tool'}"}
+        elif et == "final":
+            txt = ev.get("content") or ""
+            if txt and not da_co_chu:
+                yield {"type": "text", "content": txt}
+            ti = int(ev.get("tokens_in") or 0)
+            to = int(ev.get("tokens_out") or 0)
+            if ti or to:
+                yield {"type": "usage", "input": ti, "output": to}
+        elif et == "error":
+            yield {"type": "error", "content": str(ev.get("content") or "lỗi không rõ")}
+
+
+def _claude_sub_stream(model, messages, reasoning="off", *, brain=None, tag="chat",
+                       tiet_kiem=False):
+    """Gói Claude Code, KHÔNG tool - thay cho đường gọi thẳng /v1/messages bằng token OAuth.
+
+    Đường cũ tự đọc `~/.claude/.credentials.json` rồi gửi `Authorization: Bearer <token>` tới
+    api.anthropic.com. Anthropic cấm đúng việc đó (xem claude_auth.py), và cách họ bắt là soi
+    dấu vân tay request - thứ mà request Javis tự dựng chắc chắn không có. Nay lượt này chạy
+    qua chính binary `claude`, nên ai đăng nhập và ai trả tiền là chuyện của Claude Code.
+
+    `tiet_kiem=True` cho đường Siêu tiết kiệm: gửi system prompt TRẦN thay vì preset
+    claude_code, giữ nguyên phần tiết kiệm token vốn là toàn bộ lý do tồn tại của nó.
+    """
+    sys_txt, prompt = _claude_sub_tach(messages)
+    cli = claude_engine(system_prompt=sys_txt, cwd=_brain_root(brain) if brain else None,
+                        tag=tag, allowed_tools=CLAUDE_SUB_KHONG_TOOL,
+                        model=_claude_api_model(model) or None)
+    cli.system_prompt_raw = bool(tiet_kiem)
+    return _claude_sub_doc(cli, _cli_think(reasoning, prompt), model)
+
+
+# Tool NATIVE của Claude Code mà bot chuyên trách TUYỆT ĐỐI không được chạm, ở mọi mức quyền.
+# Bot phục vụ người lạ nhắn tới, nên "chạy được lệnh máy" là một hạng rủi ro khác hẳn phần còn
+# lại của Javis. Allowlist bên dưới đã đủ chặn (mọi tool ngoài list bị `can_use_tool` từ chối
+# per-call); danh sách này là lớp thứ hai, để một hôm nào đó allowlist bị nới thì đây vẫn giữ.
+BOT_CAM_NATIVE = ["Bash", "BashOutput", "KillShell", "WebFetch", "WebSearch", "Task",
+                  "Write", "Edit", "NotebookEdit", "Read", "Glob", "Grep"]
+
+
+def _claude_sub_stream_tools(model, messages, reasoning="off", *, brain=None, tag="bot",
+                            mode="full"):
+    """Gói Claude Code CÓ tool, cho bot chuyên trách - thay `anthropic_chat_with_mcp(oauth_token=)`.
+
+    Đường cũ an toàn nhờ MỘT sự thật kiến trúc: không engine nào của bot mở CLI, nên không con
+    nào có tool native, nên không con nào trèo ra khỏi brain của bot được. Mở engine Claude
+    Code là MẤT sự thật đó. Nó được dựng lại ở đây bằng bốn lớp tường minh, và cả bốn đều cần:
+
+    1. `allowed_tools` chỉ có `mcp__javis` → cổng `can_use_tool` TỪ CHỐI mọi tool khác từng lần
+       gọi, kể cả Bash/Read/Write builtin của Claude Code.
+    2. `BOT_CAM_NATIVE` chặn thẳng nhóm native, phòng khi lớp 1 bị nới sau này.
+    3. Config hub mang X-Javis-Vault = brain CỦA BOT → tool file đi qua `_safe_path` của đúng
+       brain đó. Thiếu nó thì hub không cấp nhóm tool file (mặc định của đường Claude), và bot
+       mức Được ghi mất khả năng ghi - vì lớp 1 đã chặn Write native rồi.
+    4. `mcp_strict` → không nạp MCP ambient của máy chủ, tức bot không thấy connector của chủ.
+
+    Cố ý KHÔNG dùng `_apply_mcp`: hàm đó gắn config hub DÙNG CHUNG không mang brain, đúng cho
+    chat của chủ (Claude có tool file native nên hub bỏ nhóm file đi cho khỏi trùng) nhưng sai
+    cho ca này. Đây là chỗ duy nhất cần cấu hình riêng, nên nó viết thẳng ra chứ không nới hàm
+    dùng chung của mọi đường Claude.
+    """
+    sys_txt, prompt = _claude_sub_tach(messages)
+    vault = _brain_root(brain) if brain else None
+    cli = claude_engine(system_prompt=sys_txt, cwd=vault, tag=tag,
+                        allowed_tools=list(mcp_hub.allow_patterns()),
+                        model=_claude_api_model(model) or None)
+    cli.javis_mode = mode
+    cli.javis_vault = vault
+    cli.mcp_config = mcp_hub.claude_config_path(mode, vault_root=vault)
+    cli.mcp_strict = cli.mcp_config is not None
+    cli.disallowed_tools = list(BOT_CAM_NATIVE)
+    return _claude_sub_doc(cli, _cli_think(reasoning, prompt), model)
+
+
 def _api_stream_goc(prov, key, model, messages, reasoning="off"):
     """Chọn generator stream theo provider api-kind. reasoning=off|low|medium|high."""
     if prov == "antigravity-cli":
@@ -983,12 +1255,10 @@ def _api_stream_goc(prov, key, model, messages, reasoning="off"):
         return engine.openai_responses_stream(creds.get("access_token", ""), creds.get("account_id", ""),
                                               _codex_safe_model(model), messages, reasoning)
     if prov == "anthropic-cli":
-        # Gói Claude Code không có API key. Mượn access token OAuth mà chính CLI đã lưu -
-        # đúng cách claude_models vẫn hỏi /v1/models bằng token đó, chỉ khác endpoint. Đây là
-        # đường gọi thẳng DUY NHẤT của gói này, và cũng là thứ mở được mức Siêu tiết kiệm cho
-        # nó. Không có token thì trả về đường cũ để lỗi nói đúng chuyện thiếu đăng nhập.
-        return engine.anthropic_stream(key, _claude_api_model(model), messages, reasoning,
-                                       oauth_token=claude_models.oauth_token())
+        # Gói Claude Code đi qua chính binary `claude`, KHÔNG tự dựng request tới
+        # api.anthropic.com bằng token của người dùng nữa (xem claude_auth.py). Vẫn không có
+        # tool nào ở đường này, đúng hợp đồng cũ. `tiet_kiem` giữ được mức Siêu tiết kiệm.
+        return _claude_sub_stream(model, messages, reasoning, tiet_kiem=True)
     return engine.anthropic_stream(key, model, messages, reasoning)
 
 
@@ -1896,12 +2166,15 @@ def _toml_str(s):
 
 
 def _write_codex_profile():
-    """Ghi ~/.codex/javis.config.toml → `codex exec -p javis` thấy MCP của Javis.
+    """Ghi ~/.codex/<profile>.config.toml → `codex exec -p <profile>` thấy MCP của Javis.
     Hub bật (mặc định): 1 entry hub - Codex dùng được MỌI transport (cả stdio/internal) + đa tài
-    khoản + quyền. Hub tắt: per-server http như cũ. Trả 'javis' nếu có server, None nếu rỗng."""
+    khoản + quyền. Hub tắt: per-server http như cũ. Trả tên profile nếu có server, None nếu rỗng.
+
+    Tên profile lấy từ `mcp_hub.codex_profile_name()` (gắn cổng khi cổng khác mặc định) để nhiều
+    bản Javis chạy chung một $HOME không ghi đè profile của nhau - xem chú thích ở hàm đó."""
     if _hub_enabled():
         return mcp_hub.codex_profile("full")
-    path = Path.home() / ".codex" / "javis.config.toml"
+    path = mcp_hub.codex_profile_path()
     lines, seen = [], set()
     for s in mcp_store.servers_for_client():
         name = re.sub(r"[^A-Za-z0-9_]", "_", (s.get("name") or "").strip())
@@ -1922,7 +2195,7 @@ def _write_codex_profile():
         if seen:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("\n".join(lines), encoding="utf-8")
-            return "javis"
+            return mcp_hub.codex_profile_name()
         if path.exists():
             path.unlink()
     except Exception as e:
@@ -1952,7 +2225,15 @@ def _apply_mcp(cli, mode="full", brain=None):
         cli.javis_vault = _brain_root(brain) if brain else None
         if _hub_enabled():
             cli.mcp_config = mcp_hub.claude_config_path(mode)
-            cli.mcp_strict = bool(cfgmod.read_settings().get("mcp", {}).get("strict")) and cli.mcp_config is not None
+            # `strict` = chỉ dùng MCP của Javis, bỏ qua config MCP sẵn có của máy. Ở mức FULL
+            # thì cờ này bị bỏ qua, cố ý: connector ambient của tài khoản Claude (Gmail, Google
+            # Drive, Lịch) nằm ngoài registry của Javis và chỉ gọi được bằng tool native, nên
+            # strict ở mức full là mở allowlist ra rồi lại khoá cửa sau. Người bật strict muốn
+            # siết mấy mức DƯỚI; ai đã chủ động chọn Toàn quyền cho một việc thì việc đó phải
+            # thật sự toàn quyền, không thì "Toàn quyền" là một cái nhãn nói dối.
+            cli.mcp_strict = (mode != "full"
+                              and bool(cfgmod.read_settings().get("mcp", {}).get("strict"))
+                              and cli.mcp_config is not None)
         else:
             cli.mcp_config = mcp_store.config_path()
             cli.mcp_strict = bool(cfgmod.read_settings().get("mcp", {}).get("strict")) and cli.mcp_config is not None
@@ -2486,6 +2767,13 @@ async def settings_set(section: str = Form(...), data: str = Form("{}")):
                 m[d["key_field"]] = ""
                 if _effective_main(cfg).get("provider") == patch["clear_key"]:
                     _set_main_model(cfg, "anthropic-cli", m.get("claude_model") or "opus")
+        # Gói Claude Code xác thực bằng gì: phiên subscription sẵn có, hay API key riêng.
+        # Giá trị lạ về "subscription" thay vì báo lỗi - đây là ô hai lựa chọn, gõ sai thì lui
+        # về cái không tốn tiền của người dùng chứ không làm chết đường chat.
+        if "claude_auth" in patch:
+            m["claude_auth"] = (claude_auth.API_KEY
+                                if str(patch["claude_auth"] or "").strip().lower() == claude_auth.API_KEY
+                                else claude_auth.SUBSCRIPTION)
         if "auxiliary" in patch:   # model phụ cho việc nền (provider + model)
             aux_patch = patch["auxiliary"] or {}
             aux = m.setdefault("auxiliary", {})
@@ -6431,16 +6719,35 @@ async def _watchtower_reachable() -> bool:
     WATCHTOWER_TOKEN luôn được set sẵn trong compose nên KHÔNG đủ để kết luận - phải dò thật.
     Dò bằng cách MỞ KẾT NỐI TCP tới cổng, TUYỆT ĐỐI không gửi HTTP: endpoint /v1/update của
     Watchtower bị kích hoạt update kể cả với GET, nên một request 'thăm dò' sẽ trigger nhầm."""
+    return await _watchtower_ly_do() == ""
+
+
+async def _watchtower_ly_do() -> str:
+    """"" = Watchtower đang chạy, tự cập nhật được. Khác rỗng = MÃ LÝ DO vì sao không.
+
+    Vì sao cần mã lý do chứ không chỉ True/False: chủ repo báo (2026-08-12) rằng "một số máy
+    VPS không có nút update, không hiểu vì sao". Cả hai lý do dưới đây đều là HÀNH VI ĐÚNG
+    theo thiết kế, nhưng app trước nay gộp chúng vào một câu chung chung nên nhìn hệt như máy
+    hỏng - và không có cách nào tự biết máy mình thiếu gì.
+
+    - no_token: WATCHTOWER_TOKEN không được set. Đây là stack Hostinger, nơi CỐ TÌNH không
+      kèm Watchtower (nó không đụng được Docker socket, bị Restarting liên tục). Đường cập
+      nhật ở đây là Redeploy, không có gì để bật thêm.
+    - watchtower_off: token có (docker-compose.yml luôn đặt sẵn) nhưng không nối được tới
+      container. Gần như luôn là vì Watchtower nằm trong `profiles: ["update"]`, tức là
+      `docker compose up -d` KHÔNG bật nó. Đây mới là trường hợp bật được, và bật bằng đúng
+      một lệnh - nên phải nói ra lệnh đó.
+    """
     if not os.getenv("WATCHTOWER_TOKEN", ""):
-        return False
+        return "no_token"
     import asyncio
     writer = None
     try:
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection("watchtower", 8080), timeout=4)
-        return True   # bắt tay TCP xong = container Watchtower đang lắng nghe
+        return ""     # bắt tay TCP xong = container Watchtower đang lắng nghe
     except Exception:
-        return False  # không phân giải host / connection refused = Watchtower không chạy
+        return "watchtower_off"   # không phân giải host / connection refused = không chạy
     finally:
         if writer is not None:
             try:
@@ -6468,11 +6775,14 @@ async def version_info():
     avail = _ver_newer(latest, cur)
     # docker: chỉ tự cập nhật tại chỗ được nếu Watchtower ĐANG chạy (ping thật). Không có →
     # frontend chuyển sang hướng dẫn REDEPLOY. native/windows: git pull tự lo.
-    can = mode in ("native", "windows") or (mode == "docker" and await _watchtower_reachable())
+    ly_do = await _watchtower_ly_do() if mode == "docker" else ""
+    can = mode in ("native", "windows") or (mode == "docker" and ly_do == "")
     st = _read_update_state()
+    # self_update_off: mã lý do để UI nói ĐÚNG máy này thiếu gì thay vì một câu chung chung.
+    # Rỗng khi tự cập nhật được - frontend chỉ đọc nó ở nhánh không có nút.
     return {"current": cur, "latest": latest, "update_available": avail,
             "mode": mode, "platform": _host_platform(), "can_self_update": can, "error": err,
-            "previous_version": st.get("previous_version"),
+            "self_update_off": ly_do, "previous_version": st.get("previous_version"),
             "update_repo": GITHUB_REPO, "image_repo": IMAGE_REPO}
 
 
@@ -9621,38 +9931,9 @@ def _bot_ket(out, lich_su):
     return {"text": channel_context.strip_control_blocks(out), "files": []}
 
 
-async def _bot_cli_du_phong(sysprompt, text, *, sess, brain, chat_id, model, progress):
-    """Đường dự phòng cho gói Claude Code khi gọi thẳng API hỏng (hay gặp nhất: không đọc được
-    token OAuth mà CLI đã lưu, nên /v1/messages trả 401 và LƯỢT NÀO CŨNG hỏng).
-
-    Vẫn giữ nguyên hợp đồng của bot: cùng prompt, cùng tài liệu, cùng lịch sử, và KHÔNG tool.
-    Chỉ khác đường truyền. Không tool ở đây là thật chứ không phải lời hứa - `allowed_tools`
-    bật cổng `can_use_tool` của engine, và mọi tool đều rớt khỏi danh sách nên bị từ chối.
-
-    Không có bản tương ứng cho Codex: Codex không có cổng duyệt per-call, nên chạy nó không
-    tool là bất khả. Codex hỏng thì báo thẳng, xem chỗ gọi.
-    """
-    cli = sess.get("botcli")
-    if cli is None:
-        cli = claude_engine(system_prompt=sysprompt, cwd=_brain_root(brain),
-                            tag=f"bot:{chat_id}", allowed_tools=BOT_KHONG_TOOL)
-        sess["botcli"] = cli
-    cli.system_prompt = sysprompt      # tài liệu đổi theo từng câu hỏi
-    cli.model = model or None
-    out, loi = "", []
-    async for ev in cli.query(text):
-        et = ev.get("type")
-        if et == "final":
-            out = ev.get("content") or out
-            usage_store.record("cli", cli.model or "mặc định",
-                               ev.get("tokens_in", 0), ev.get("tokens_out", 0),
-                               ev.get("cost_usd") or 0)
-        elif et == "text":
-            out += ev.get("content") or ""
-            await progress("✍ Đang soạn câu trả lời…")
-        elif et == "error":
-            loi.append(str(ev.get("content") or "lỗi không rõ"))
-    return out, loi
+# `_bot_cli_du_phong` đã gỡ ở 0.26.17. Nó là đường LUI cho ca "đọc không ra token OAuth nên
+# /v1/messages trả 401". Nay không còn token nào để đọc: gói Claude Code chạy thẳng qua binary
+# `claude` ngay từ `_api_stream`, nên một đường lui cũng dẫn tới đúng engine ấy là vô nghĩa.
 
 
 async def _bot_tra_loi(text, *, sess, sysprompt, prov, api_key, api_model, reasoning,
@@ -9677,9 +9958,10 @@ async def _bot_tra_loi(text, *, sess, sysprompt, prov, api_key, api_model, reaso
     `sysprompt`, nên bỏ tool không làm bot mất khả năng đọc brain - chỉ bỏ khả năng đi lang
     thang trong đó.
 
-    `_api_stream` phục vụ đủ mọi provider, kể cả các engine CLI: ChatGPT OAuth đi
-    `openai_responses_stream`, Claude Code đi `anthropic_stream` với token OAuth mà chính CLI
-    đã lưu. Không con nào phải mở CLI, nên cũng không con nào tốn thời gian khởi động CLI.
+    `_api_stream` phục vụ mọi provider trên cùng hợp đồng stream. Sáu provider API đi thẳng
+    qua adapter HTTP; ChatGPT dùng Responses API cho đường không-tool; Google Antigravity dùng
+    adapter CLI của `agy`; Claude subscription chạy qua đúng binary `claude`, không mượn token
+    đăng nhập để tự dựng request Anthropic (xem `claude_auth.py`).
 
     Đây là đường của mức **Chỉ đọc** - mức mặc định. Bot đặt ở mức Được ghi / Toàn quyền đi
     `_bot_tra_loi_co_tool`. Hai đường tách hẳn nhau CÓ CHỦ Ý: đường này phải soi được bằng mắt
@@ -9698,24 +9980,6 @@ async def _bot_tra_loi(text, *, sess, sysprompt, prov, api_key, api_model, reaso
         _api_stream(prov, api_key, api_model, messages, reasoning),
         progress=progress, runtime_trace=runtime_trace, prov=prov, api_model=api_model)
 
-    # Gói Claude Code: gọi thẳng /v1/messages cần token OAuth mà CLI đã lưu. Đọc không ra (hoặc
-    # Anthropic không nhận) là LƯỢT NÀO CŨNG hỏng, và người dùng chỉ thấy một câu xin lỗi lặp
-    # đi lặp lại. Rơi về chính CLI của gói đó - vẫn không tool, nên vẫn đúng hợp đồng của bot.
-    if not out and prov == "anthropic-cli" and brain:
-        print(f"[bot {prov}] gọi thẳng hỏng ({loi[0] if loi else '?'}), thử lại qua CLI",
-              file=__import__('sys').stderr)
-        try:
-            out, loi2 = await _bot_cli_du_phong(sysprompt, text, sess=sess, brain=brain,
-                                                chat_id=chat_id, model=api_model,
-                                                progress=progress)
-            if out:
-                loi = []
-            else:
-                loi += loi2
-        except Exception as e:
-            print(f"[bot {prov}] CLI dự phòng cũng hỏng: {e}", file=__import__('sys').stderr)
-            loi.append(str(e))
-
     if not out:
         lich_su.pop()   # lượt hỏng thì đừng để câu hỏi treo lơ lửng không có câu trả lời
         if prov == "openai-oauth" and not (openai_oauth.valid_creds() or {}).get("access_token"):
@@ -9732,13 +9996,17 @@ async def _bot_tra_loi(text, *, sess, sysprompt, prov, api_key, api_model, reaso
 # ============================================================
 # Bot ở mức Được ghi / Toàn quyền - CÓ tool
 # ============================================================
-def _bot_stream_co_tool(prov, key, model, messages, reasoning, tools, route):
+def _bot_stream_co_tool(prov, key, model, messages, reasoning, tools, route,
+                        *, brain=None, tag_bot="bot", muc_quyen="full"):
     """Vòng gọi tool cho một lượt bot, đủ CẢ TÁM bộ não.
 
     Vẫn giữ nguyên lời hứa gốc: đổi bộ não thì trải nghiệm không đổi. Nên hai gói thuê bao
-    không bị bỏ lại - ChatGPT đi `responses_with_mcp`, Claude Code đi `anthropic_chat_with_mcp`
-    với chính token OAuth mà CLI đã lưu. KHÔNG con nào mở CLI, nên không con nào chạm được vào
-    tool NATIVE (Bash, Read, WebFetch) - và đó là chỗ tựa của cả rào an toàn bên dưới.
+    không bị bỏ lại - ChatGPT đi `responses_with_mcp`, Claude Code đi engine Claude Code thật
+    (`_claude_sub_stream_tools`) thay cho đường mượn token OAuth đã gỡ ở 0.26.17.
+
+    Điều đó có một hệ quả PHẢI biết: nhánh Claude Code nay CÓ tool native (Bash, Read,
+    WebFetch), khác hẳn sáu nhánh kia. Rào an toàn vì thế không còn tựa vào "không engine nào
+    mở CLI" được nữa, mà tựa vào allowlist per-call của `can_use_tool` - xem `_bot_allowlist`.
 
     `tools` rỗng (hub tắt, hoặc chưa đấu nguồn nào) → rơi về stream không tool. Bot vẫn trả lời
     được thay vì im; chỗ gọi báo cho chủ biết là lượt đó không có công cụ nào.
@@ -9769,8 +10037,12 @@ def _bot_stream_co_tool(prov, key, model, messages, reasoning, tools, route):
             return engine.responses_with_mcp(creds.get("access_token", ""), creds.get("account_id", ""),
                                              _codex_safe_model(model), messages, reasoning, tools, route)
         if prov == "anthropic-cli":
-            return engine.anthropic_chat_with_mcp(key, _claude_api_model(model), messages, reasoning,
-                                                  tools, route, oauth_token=claude_models.oauth_token())
+            # Gói Claude Code: qua binary `claude` + hub, không mượn token đăng nhập của ai.
+            # `tools` chỉ dùng để BIẾT lượt này có công cụ hay không - engine tự đấu hub bằng
+            # config riêng mang brain của bot, nên không phải chuyển danh sách schema sang.
+            # Bốn lớp rào giữ đúng hợp đồng cách ly: xem `_claude_sub_stream_tools`.
+            return _claude_sub_stream_tools(model, messages, reasoning, brain=brain,
+                                            tag=tag_bot, mode=muc_quyen)
         return engine.anthropic_chat_with_mcp(key, model, messages, reasoning, tools, route)
 
     # Nhà cung cấp gãy tạm thời thì thử lại - nhưng dừng ngay khi tool đầu tiên đã chạy, vì từ
@@ -9830,7 +10102,8 @@ async def _bot_tra_loi_co_tool(text, *, sess, sysprompt, prov, api_key, api_mode
     _bot_ghim_duong(runtime_trace, prov, api_model, messages, tools)
 
     out, loi = await _bot_doc_stream(
-        _bot_stream_co_tool(prov, api_key, api_model, messages, reasoning, tools, route),
+        _bot_stream_co_tool(prov, api_key, api_model, messages, reasoning, tools, route,
+                            brain=brain, tag_bot=f"bot:{chat_id}", muc_quyen=muc_quyen),
         progress=progress, runtime_trace=runtime_trace, prov=prov, api_model=api_model)
 
     # Engine KHÔNG chạy nổi vòng tool: trả lời lại lượt này mà bỏ tool đi.
@@ -11076,9 +11349,12 @@ async def chatbots_update(bot_id: str, request: Request):
             return chan
     ok, err = chatbot_store.update_bot(bot_id, form)
     if not ok:
-        # 404 là "không có bot nào id đó"; rào xác nhận rủi ro là 400 (yêu cầu sai, bot có thật).
+        # 404 CHỈ khi thật sự không có bot nào id đó; mọi lý do còn lại (xác nhận rủi ro, slug
+        # Agent hỏng) là 400 - bot có thật, chỉ yêu cầu sai. Bản trước liệt kê ngược lại: mặc
+        # định 404 rồi trừ ra một trường hợp, nên mỗi lý do từ chối mới thêm vào kho lại đi ra
+        # ngoài dưới dạng "không tìm thấy bot", đọc xong không lần được ra lỗi thật.
         return JSONResponse({"ok": False, "error": err},
-                            status_code=400 if err == chatbot_store.LOI_CHUA_XAC_NHAN else 404)
+                            status_code=404 if err == chatbot_store.LOI_KHONG_CO_BOT else 400)
     # Đang chạy mà đổi token/agent/brain thì phải khởi động lại mới ăn. Khởi động lại luôn cho
     # chắc thay vì đoán trường nào cần: sai ở đây là bot chạy bằng cấu hình cũ mà không ai biết.
     if bot_id in chatbot_runtime._RUNNING:
