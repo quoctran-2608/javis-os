@@ -4,6 +4,14 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 Định dạng: mỗi phiên bản là một khối `## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
 
+## [0.27.3] - 2026-08-12
+### Sửa lỗi
+- **Trang Kết nối không còn báo sai rằng Google Antigravity CLI “chưa hỗ trợ gọi công cụ”.** Backend đã hỗ trợ Antigravity gọi MCP Hub qua cầu stdio từ `0.27.0`, nhưng danh sách capability tĩnh trên dashboard bỏ sót provider `antigravity-cli`, nên chỉ giao diện hiện cảnh báo vàng sai.
+- **Antigravity nay hiện thẻ xanh đúng đường chạy thật.** Thẻ xác nhận đây là agent CLI native, gọi kho Kết nối qua cầu MCP stdio → hub, đồng thời có tool máy và file trong brain.
+
+### Kiểm thử
+- Canary ngang quyền nay bắt buộc giao diện liệt kê đủ ba engine CLI có MCP (Claude Code, Codex, Antigravity) và toàn bộ provider API mà backend cấp vòng gọi tool. Adapter Antigravity 31 test và lượt chat tích hợp vẫn xanh.
+
 ## [0.27.2] - 2026-08-11
 ### Sửa lỗi
 - **Antigravity chạy được trên VPS x86/QEMU thiếu `pclmulqdq`.** Binary x86-64 chính thức của Google `agy 1.1.12` được build với PCLMUL, SSE4.1, SSE4.2, POPCNT và các tập lệnh x86 khác; CPU ảo cũ thiếu một cờ sẽ chết `SIGILL` trước cả bước OAuth. Image Javis nay cài song song binary ARM64 chính thức và tự chạy nó qua `qemu-aarch64` khi CPU x86 không đủ cờ.

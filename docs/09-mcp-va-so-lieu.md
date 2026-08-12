@@ -8,7 +8,7 @@ Bên dưới, mỗi kết nối là một "đường ống" MCP (Model Context P
 
 - **Kho kết nối cài sẵn**: chọn dịch vụ, dán API key (hoặc quét QR với Zalo) là xong. Javis tự kiểm tra key và tự đặt tên tài khoản (ví dụ lấy đúng tên cửa hàng từ Pancake POS). Không còn phải gõ URL hay header.
 - **Một dịch vụ, nhiều tài khoản**: 3 cửa hàng Pancake = 3 tài khoản trong cùng một thẻ Pancake POS. 2 số Zalo = 2 tài khoản Zalo chạy song song. Mỗi tài khoản bật/tắt, phân quyền, đặt mặc định riêng.
-- **Mọi bộ não dùng chung**: Claude Code, ChatGPT (Codex), OpenRouter, OpenAI API, Anthropic API và Google Gemini (API) đều dùng chung kho Kết nối này qua "hub" của Javis - đấu một lần, đổi model thoải mái. Riêng Gemini có một điểm lệch: phần chạy bên dưới đã gọi được công cụ qua hub, nhưng trang Kết nối vẫn hiện dòng cảnh báo vàng "⚠ Main Model đang là Google Gemini (API) - chưa hỗ trợ gọi công cụ. Đổi ở trang Models." vì danh sách trên giao diện chưa được cập nhật. Cứ dùng bình thường.
+- **Mọi bộ não dùng chung**: Claude Code, ChatGPT (Codex), Google Antigravity CLI, OpenRouter, OpenAI API, Anthropic API, Google Gemini, Groq và Ollama đều dùng chung kho Kết nối qua hub của Javis - đấu một lần, đổi model thoải mái. Antigravity gọi hub qua cầu MCP stdio riêng; trang Kết nối sẽ hiện thẻ xanh xác nhận khi chọn provider này làm Main Model.
 - **Phân quyền cứng**: mỗi tài khoản có mức quyền. Javis CHẶN thật sự (không phải chỉ nhắc bằng lời) các thao tác vượt quyền, ví dụ tạo đơn khi đang ở mức Chỉ đọc.
 
 ## Mở ở đâu trong Javis

@@ -24,7 +24,7 @@ publish = (ROOT / ".github" / "workflows" / "docker-publish.yml").read_text(
 requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
 version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
-check("release là 0.27.2", version == "0.27.2")
+check("release là 0.27.3", version == "0.27.3")
 
 dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 compat = (ROOT / "system" / "agy-compatible.sh").read_text(encoding="utf-8")

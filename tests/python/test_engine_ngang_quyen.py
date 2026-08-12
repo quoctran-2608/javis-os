@@ -122,8 +122,8 @@ check("nhãn kiểu của provider API là 'MCP Javis', không phải 'chat'",
 check("dòng Main Model nói rõ provider API vẫn có MCP + skill + loop",
       "Gọi API thẳng - MCP Javis + skill + loop" in CONSOLE_JS)
 
-# Gemini từng bị sót khỏi MCP_PROVIDERS nên trang Kết nối báo nhầm "chưa hỗ trợ gọi công cụ"
-# dù _api_stream_mcp đã phục vụ nó. Danh sách trên UI phải khớp danh sách thật ở server.
+# Gemini và Antigravity từng bị sót khỏi MCP_PROVIDERS nên trang Kết nối báo nhầm "chưa hỗ
+# trợ gọi công cụ" dù backend đã phục vụ chúng. Danh sách UI phải khớp mọi đường MCP thật.
 _ui = re.search(r"const MCP_PROVIDERS = \[([^\]]*)\]", CONSOLE_JS)
 check("tìm được MCP_PROVIDERS trên UI", _ui is not None)
 _ui_set = set(re.findall(r'"([^"]+)"', _ui.group(1))) if _ui else set()
@@ -135,9 +135,12 @@ check("đọc được danh sách provider có MCP ở server", _srv is not None
 _srv_set = set(re.findall(r'"([^"]+)"', _srv.group(1))) if _srv else set()
 check(f"server cấp MCP cho mọi provider API (đang có: {sorted(_srv_set)})",
       {"openrouter", "openai", "anthropic-api", "gemini", "groq", "ollama"} <= _srv_set)
-check(f"CANARY: UI liệt kê ĐÚNG danh sách của server + Claude Code "
+check(f"CANARY: UI liệt kê ĐÚNG provider API + ba CLI có MCP "
       f"(UI: {sorted(_ui_set)} | server: {sorted(_srv_set)})",
-      _ui_set == _srv_set | {"anthropic-cli"})
+      _ui_set == _srv_set | {"anthropic-cli", "openai-oauth", "antigravity-cli"})
+check("Antigravity hiện thẻ xanh đúng đường MCP proxy, không dùng mô tả API chung",
+      'main.provider === "antigravity-cli"' in CONSOLE_JS
+      and "cầu stdio → hub" in CONSOLE_JS)
 
 # System prompt: Javis phải tự biết mình đổi được bộ não và không được tự hạ thấp.
 check("system prompt gọi Javis là AI agentic đổi được bộ não",
