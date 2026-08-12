@@ -13,11 +13,13 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 - **Một nguồn MCP chậm không còn kéo chết cả lượt chat.** Discovery chạy song song với timeout theo nguồn; lỗi khởi động Claude chỉ đúng trang Kết nối cần kiểm tra.
 - **Mức Toàn quyền của việc nền giữ đúng nghĩa.** Tool native/connector ambient không còn bị allowlist hoặc `mcp.strict` chặn nhầm; đường full dừng rõ ràng thay vì đổi sang engine thiếu tool rồi có nguy cơ làm lặp việc.
 - **Nút “Kiểm tra lại” ở trang Cập nhật làm mới cả danh sách phiên bản**, không giữ dữ liệu cũ trong cache trình duyệt.
+- **Chuông thông báo không còn nhắc bản đã cài.** Bản cập nhật đang chạy không bị tính là chưa đọc; bản mới chưa cài vẫn hiện bình thường.
 - **Route, installer và test runner được hợp nhất đúng sau upstream.** Marker installer không còn làm canary admin trích nhầm khối; runner WSL không gọi nhầm Python Windows, không dùng chung SQLite state giữa test và không đo sai tốc độ import do filesystem `/mnt`.
 
 ### Cải thiện
 - **Giữ nguyên ba engine CLI của fork:** Claude Code, ChatGPT/Codex và Google Antigravity. Antigravity tiếp tục có OAuth trong Models, resume conversation, volume `~/.gemini`, fallback ARM64-QEMU cho CPU thiếu PCLMUL và MCP stdio → Javis Hub.
 - **Toàn bộ đường deploy production tiếp tục trỏ `quoctran-2608/javis-os`.** Compose thường, Hostinger, build-from-source, multi-instance, proxy dùng chung, link tài liệu trong dashboard và hướng dẫn rollback không quay về image/repo upstream.
+- **Khung chat mobile dồn tên model và nút phóng to về bên trái**, đồng thời chặn tên model dài đẩy nút ra ngoài màn hình.
 
 ### Kiểm thử
 - Full suite trước metadata và sau xử lý conflict chạy xanh **212/212** trên Linux/WSL với dependency đúng `requirements.txt`, state test cô lập và toàn bộ JavaScript canary.
