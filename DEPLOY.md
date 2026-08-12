@@ -158,7 +158,7 @@ máy**:
 
 ```bash
 docker network create javis-web
-curl -fsSLO https://raw.githubusercontent.com/blogminhquy/javis-os/main/docker-compose.proxy.yml
+curl -fsSLO https://raw.githubusercontent.com/quoctran-2608/javis-os/main/docker-compose.proxy.yml
 docker compose -f docker-compose.proxy.yml -p javis-proxy up -d
 ```
 
@@ -166,8 +166,8 @@ Rồi mỗi bản một **thư mục riêng**:
 
 ```bash
 mkdir -p ~/javis-shop && cd ~/javis-shop
-curl -fsSLO https://raw.githubusercontent.com/blogminhquy/javis-os/main/docker-compose.yml
-curl -fsSLO https://raw.githubusercontent.com/blogminhquy/javis-os/main/docker-compose.multi.yml
+curl -fsSLO https://raw.githubusercontent.com/quoctran-2608/javis-os/main/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/quoctran-2608/javis-os/main/docker-compose.multi.yml
 cat > .env <<'EOF'
 JAVIS_NAME=javis-shop
 JAVIS_HOST_PORT=7777

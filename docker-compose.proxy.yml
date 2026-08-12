@@ -10,7 +10,7 @@
 #
 # CÀI (làm một lần cho cả VPS):
 #   docker network create javis-web
-#   curl -fsSLO https://raw.githubusercontent.com/blogminhquy/javis-os/main/docker-compose.proxy.yml
+#   curl -fsSLO https://raw.githubusercontent.com/quoctran-2608/javis-os/main/docker-compose.proxy.yml
 #   docker compose -f docker-compose.proxy.yml -p javis-proxy up -d
 #
 # SAU ĐÓ mỗi bản Javis chạy ở THƯ MỤC RIÊNG với .env riêng (xem docker-compose.multi.yml):
