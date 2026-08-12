@@ -49,29 +49,62 @@ def _conn(i, **kw):
 
 
 # ============================================================
-# 1. Dò SONG SONG: tổng thời gian ~ nguồn chậm nhất, không phải tổng mọi nguồn
+# 1. Dò SONG SONG: mọi nguồn phải cùng vào vùng chạy, không dựa vào đồng hồ tường
 # ============================================================
 _gọi = []
+_dang_chay = 0
+_cao_nhat = 0
+_du_nam = None
+_mo_cong = None
 
 
 async def _cham(spec):
+    global _dang_chay, _cao_nhat
     _gọi.append(spec.get("key"))
-    await asyncio.sleep(0.30)
-    return [{"name": "t", "description": "d", "inputSchema": {"type": "object"}}]
+    _dang_chay += 1
+    _cao_nhat = max(_cao_nhat, _dang_chay)
+    if _dang_chay == 5:
+        _du_nam.set()
+    try:
+        await _mo_cong.wait()
+        return [{"name": "t", "description": "d", "inputSchema": {"type": "object"}}]
+    finally:
+        _dang_chay -= 1
+
+
+async def _do_song_song(conns):
+    global _du_nam, _mo_cong
+    _du_nam = asyncio.Event()
+    _mo_cong = asyncio.Event()
+    task = asyncio.create_task(mcp_client.discover_resolved(conns))
+    try:
+        # Nếu code quay lại tuần tự, nguồn đầu đứng ở cổng và bốn nguồn sau không bao giờ vào.
+        # Chỉ nhường event loop một số vòng hữu hạn: không dùng đồng hồ nên WSL treo process
+        # bao lâu cũng không tạo lỗi giả, mà bản tuần tự vẫn bị phát hiện và hủy sạch.
+        for _ in range(20):
+            if _du_nam.is_set():
+                break
+            await asyncio.sleep(0)
+        if not _du_nam.is_set():
+            return [], {}, False
+        _mo_cong.set()
+        tools, route = await task
+        return tools, route, True
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 _that = mcp_client.pool.list_tools
 mcp_client.pool.list_tools = _cham
 try:
     conns = [_conn(i) for i in range(5)]
-    t0 = time.time()
-    tools, route = asyncio.run(mcp_client.discover_resolved(conns))
-    mat = time.time() - t0
+    tools, route, cung_luc = asyncio.run(_do_song_song(conns))
 finally:
     mcp_client.pool.list_tools = _that
 
-check(f"5 nguồn x 0.30s dò song song xong dưới 1.0s (thật: {mat:.2f}s, tuần tự sẽ là ~1.5s)",
-      mat < 1.0)
+check("cả 5 nguồn cùng vào vùng dò trước khi mở cổng", cung_luc and _cao_nhat == 5)
 check("vẫn đủ tool của cả 5 nguồn", len(tools) == 5)
 check("mỗi nguồn được dò đúng 1 lần", sorted(_gọi) == [f"c{i}" for i in range(5)])
 # Thứ tự phải bám thứ tự conns: _mk_fn chống trùng bằng hậu tố, đảo thứ tự là tên tool đổi
