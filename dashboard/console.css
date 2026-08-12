@@ -152,6 +152,15 @@ body.in-console .hud-actions { display: none; }
 .prov-action .gcard-btn { width: auto; flex: 0 0 auto; }
 .prov-note { font-size: 13px; color: var(--text3); margin-top: 8px; opacity: 0.7; }
 
+/* Nguồn xác thực của gói Claude Code (subscription / API key) */
+.prov-auth { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--glass-brd); }
+.prov-auth-title { font-family: var(--font); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--text3); margin-bottom: 8px; }
+.prov-auth-opt { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--text2); line-height: 1.5; margin-bottom: 6px; cursor: pointer; }
+.prov-auth-opt input { margin-top: 3px; flex: 0 0 auto; }
+.prov-auth-opt b { color: var(--text); font-weight: 600; }
+.prov-auth-opt i { color: var(--text3); }
+.prov-auth-warn { font-size: 13px; line-height: 1.55; color: var(--warn-ink); background: var(--warn-wash); border: 1px solid var(--warn-line); border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
+
 /* Auxiliary model chips */
 .aux-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .aux-chip {
@@ -356,6 +365,14 @@ body.has-rail .hud { margin-left: var(--rail-w); width: calc(100% - var(--rail-w
   border: 1px solid var(--glass-brd); font-size: 13px; word-break: break-all;
   user-select: all;
 }
+/* Token mà không có tài liệu thì người dùng cầm chuỗi jvs_ trong tay mà không biết dán vào đâu.
+   Link đặt ngay dưới thẻ, và lặp lại lúc token vừa hiện ra - đúng lúc cần bước kế tiếp nhất. */
+.tk-docs {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--surface-3);
+}
+.tk-docs a, .tk-doclink { font-size: 12.5px; color: var(--link-ink); text-decoration: none; }
+.tk-docs a:hover, .tk-doclink:hover { text-decoration: underline; }
 .gcard-btn {
   margin-top: 14px; width: 100%; padding: 9px; border-radius: 10px; cursor: pointer;
   background: var(--surface-2); border: 1px solid var(--glass-brd); color: var(--text);
@@ -778,3 +795,27 @@ body.has-rail .hud { margin-left: var(--rail-w); width: calc(100% - var(--rail-w
 .aud-ts { opacity: .55; font-size: 12px; margin-right: 6px; }
 .aud-err { font-size: 12px; opacity: .8; margin-top: 2px; }
 
+
+/* Xác thực 2 lớp (trang Tài khoản) */
+.tfa-card .tfa-warn { color: var(--warn-ink); font-weight: 600; }
+.tfa-steps { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.tfa-step { font-size: 13px; line-height: 1.55; color: var(--text2); }
+.tfa-step b { color: var(--text); }
+.tfa-qr { align-self: flex-start; background: #fff; padding: 10px; border-radius: 10px; border: 1px solid var(--glass-brd); }
+/* KHÔNG ép kích thước: để SVG ra đúng cỡ tự nhiên mà server đã tính (8px mỗi ô).
+   Ép xuống 200px là nén 49 ô vào 200px = 3,7px mỗi ô, và camera điện thoại soi màn hình
+   ở cỡ đó thì quét không ra - đúng lỗi ở 0.26.20. max-width giữ cho nó không tràn thẻ
+   trên màn hình hẹp; height:auto để tỉ lệ vuông không bị méo khi bị thu. */
+.tfa-qr svg { display: block; width: auto; max-width: 100%; height: auto; }
+.tfa-secret { display: inline-block; font-family: var(--font-mono, monospace); font-size: 13px; letter-spacing: 1px; background: var(--surface-2); border: 1px solid var(--glass-brd); border-radius: 6px; padding: 3px 8px; margin-left: 4px; user-select: all; word-break: break-all; }
+.tfa-rec { margin-top: 10px; }
+.tfa-rec-note { font-size: 13px; line-height: 1.55; color: var(--warn-ink); background: var(--warn-wash); border: 1px solid var(--warn-line); border-radius: 8px; padding: 9px 11px; margin-bottom: 10px; }
+.tfa-rec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(122px, 1fr)); gap: 7px; margin-bottom: 12px; }
+.tfa-rec-grid code { font-family: var(--font-mono, monospace); font-size: 13px; letter-spacing: 1px; text-align: center; background: var(--surface-2); border: 1px solid var(--glass-brd); border-radius: 6px; padding: 6px 4px; user-select: all; }
+
+/* Dòng trạng thái 2FA trong khối "Tài khoản đăng nhập" cũ (#quickSet nhúng ở trang Cài đặt) */
+.set-tfa { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; line-height: 1.55; color: var(--text2); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--glass-brd); }
+.set-tfa .tfa-on { color: var(--green); }
+.set-tfa .tfa-off { color: var(--text); }
+.set-tfa .tfa-low { color: var(--warn-ink); }
+.set-tfa button { margin-left: auto; flex: 0 0 auto; }
