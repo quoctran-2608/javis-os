@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -23,8 +24,13 @@ JS_DIR = ROOT / "tests" / "js"
 
 
 def trinh_thong_dich() -> str:
-    """Ưu tiên .venv của dự án - python hệ thống thường thiếu fastapi/yaml."""
-    for p in (ROOT / ".venv" / "Scripts" / "python.exe", ROOT / ".venv" / "bin" / "python"):
+    """Ưu tiên .venv đúng hệ điều hành; không chạy nhầm python.exe của Windows từ WSL."""
+    candidates = (
+        (ROOT / ".venv" / "Scripts" / "python.exe",)
+        if os.name == "nt"
+        else (ROOT / ".venv" / "bin" / "python",)
+    )
+    for p in candidates:
         if p.is_file():
             return str(p)
     return sys.executable
@@ -66,8 +72,27 @@ def main() -> int:
     do, t0 = [], time.perf_counter()
     for i, (cmd, ten) in enumerate(viec, 1):
         t = time.perf_counter()
-        r = subprocess.run(cmd, cwd=str(ROOT), env=env, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace")
+        run_env = env
+        state_tmp = None
+        test_tu_co_lap_state = False
+        if cmd[0] == py:
+            try:
+                test_tu_co_lap_state = "JAVIS_STATE_DIR" in Path(cmd[1]).read_text(
+                    encoding="utf-8", errors="replace")
+            except (IndexError, OSError):
+                pass
+        if cmd[0] == py and not env.get("JAVIS_STATE_DIR") and not test_tu_co_lap_state:
+            # Mỗi test Python có state riêng trên filesystem native. Điều này tránh test chạm
+            # dữ liệu dev và tránh SQLite WAL lỗi trên checkout WSL nằm ở /mnt/<ổ Windows>.
+            # Test đã tự khai JAVIS_STATE_DIR thì giữ nguyên quyền tự cô lập của chính nó.
+            state_tmp = tempfile.TemporaryDirectory(prefix="javis-test-state-")
+            run_env = dict(env, JAVIS_STATE_DIR=state_tmp.name)
+        try:
+            r = subprocess.run(cmd, cwd=str(ROOT), env=run_env, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace")
+        finally:
+            if state_tmp is not None:
+                state_tmp.cleanup()
         giay = time.perf_counter() - t
         cham = f"  ({giay:.0f}s)" if giay >= 5 else ""
         if r.returncode == 0:

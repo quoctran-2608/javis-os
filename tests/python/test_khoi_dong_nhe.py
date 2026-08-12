@@ -12,6 +12,7 @@ file cho tiện, không ai nhận ra, và app chậm dần từng chút một m�
 """
 from _paths import ROOT, SERVER  # noqa: E402,F401  - nạp server/ vào sys.path (xem tests/python/_paths.py)
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -78,12 +79,30 @@ for ten in ("_tts_edge", "tts_voices"):
 TRAN_TI_LE = 3.0
 
 
+_BENCH_HERE = HERE
+_BENCH_TMP = None
+if os.getenv("WSL_DISTRO_NAME") and Path(HERE).as_posix().startswith("/mnt/"):
+    # Source trên ổ Windows qua WSL/9p làm mỗi import chịu hàng nghìn stat chậm, còn baseline
+    # fastapi nằm trên filesystem Linux. So hai phía như vậy đo loại filesystem, không đo code.
+    # Chỉ phép đo timing dùng bản sao native; các assertion chức năng phía trên vẫn chạy source thật.
+    _BENCH_TMP = tempfile.mkdtemp(prefix="javis-khoidong-native-")
+    bench_root = Path(_BENCH_TMP) / "repo"
+    for name in ("server", "dashboard", "system"):
+        shutil.copytree(ROOT / name, bench_root / name,
+                        ignore=shutil.ignore_patterns("__pycache__"))
+    for name in ("VERSION", "CLAUDE.md", "ANNOUNCEMENTS.json"):
+        shutil.copy2(ROOT / name, bench_root / name)
+    (bench_root / "brains").mkdir()
+    (bench_root / "vault").mkdir()
+    _BENCH_HERE = str(bench_root / "server")
+
+
 def do_nap(code, n=3):
     import time
     ts = []
     for _ in range(n):
         t = time.perf_counter()
-        subprocess.run([sys.executable, "-c", code], cwd=HERE, capture_output=True)
+        subprocess.run([sys.executable, "-c", code], cwd=_BENCH_HERE, capture_output=True)
         ts.append((time.perf_counter() - t) * 1000)
     return min(ts)      # min: nhiễu chỉ cộng thêm, không bao giờ trừ bớt
 
@@ -96,6 +115,8 @@ print(f"     (interpreter trần {base:.0f} ms | fastapi {chi_fastapi:.0f} ms | 
       f"main {chi_main:.0f} ms | tỉ lệ {ti_le:.2f})")
 check(f"nạp main không quá {TRAN_TI_LE} lần chi phí nạp fastapi (đang {ti_le:.2f} lần)",
       0 < ti_le < TRAN_TI_LE)
+if _BENCH_TMP:
+    shutil.rmtree(_BENCH_TMP, ignore_errors=True)
 
 # ---- Không ai lén thêm lại import ở mức module ----
 src = Path(HERE, "main.py").read_text(encoding="utf-8", errors="replace")

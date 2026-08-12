@@ -108,7 +108,7 @@ ok "Python deps installed"
 # --- 7. .env (chmod 600 - holds tokens) ---
 if [ ! -f .env ]; then cp env.example .env; chmod 600 .env; ok "Created .env from template"; else chmod 600 .env 2>/dev/null || true; ok ".env exists"; fi
 
-# --- 8. minimal config prompt ---
+# --- 7a. minimal config prompt ---
 if [ -t 0 ]; then
   read -rp "Vault path [blank = in-repo vault/]: " VP || true
   if [ -n "${VP:-}" ]; then
@@ -222,7 +222,7 @@ fi
 # Antigravity đăng nhập ngay trong Dashboard > Models; không probe bằng print mode ở đây vì
 # lệnh đó sẽ mở flow OAuth và làm installer chờ vô ích.
 
-# --- 10. service: systemd if available, else nohup ---
+# --- 9. service: systemd if available, else nohup ---
 PY="$APP_DIR/.venv/bin/python"
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   log "Installing systemd service ($SVC.service, port $PORT)..."
