@@ -1,0 +1,147 @@
+schema_version: 1
+
+# Brain OS V1 starts fail-safe. The installer may copy this file into a real Brain,
+# but no automatic move/write/ingest is allowed until dry_run is explicitly disabled.
+mode: balanced
+dry_run: true
+
+watch:
+  interval_min: 5
+  debounce_seconds: 10
+  max_ai_jobs_per_cycle: 2
+  sparse_reconcile_minutes: 60
+
+classification:
+  auto_move_confidence: 0.80
+  candidate_confidence: 0.55
+  default_when_uncertain: index
+
+folders:
+  max_depth: 3
+  allow_auto_move: false
+  allow_auto_create: false
+  unsorted_name: _Unsorted
+
+# Tags describe multiple dimensions. Folder category remains the single primary home.
+tags:
+  max_per_note: 6
+  max_depth: 3
+  allow_auto_create: false
+  preserve_legacy_tags: true
+
+# Markdown/file content remains source of truth. SQLite is derived and rebuildable.
+index:
+  database: .javis/brain-index.db
+  use_fts5_if_available: true
+  include_markdown_body: true
+
+originals:
+  preserve_import_snapshot: true
+  snapshot_root: .javis/originals
+  hash_algorithm: sha256
+
+processing:
+  incremental_ingest: true
+  auto_wiki: conservative
+  candidate_enabled: true
+  delete_source_policy: mark_missing
+
+paths:
+  dashboard: 00 - Dashboard
+  daily: 01 - Daily Log
+  weekly: 02 - Weekly Log
+  monthly: 03 - Monthly Log
+  future: 04 - Future Log
+  notes: Notes
+  sources: sources
+  library: Library
+  wiki: wiki
+  memory: memory
+  skills: skills
+  javis: Javis
+  system: System
+  state: .javis
+
+zones:
+  "00 - Dashboard":
+    discover: true
+    index: false
+    ingest: never
+    wiki: never
+
+  "01 - Daily Log":
+    discover: true
+    index: true
+    ingest: selective
+    wiki: never_by_default
+
+  "02 - Weekly Log":
+    discover: true
+    index: true
+    ingest: selective
+    wiki: candidate_only
+
+  "03 - Monthly Log":
+    discover: true
+    index: true
+    ingest: selective
+    wiki: candidate_only
+
+  "04 - Future Log":
+    discover: true
+    index: true
+    ingest: never
+    wiki: never_by_default
+
+  Notes:
+    discover: true
+    index: true
+    ingest: auto_selective
+    wiki: selective
+
+  sources:
+    discover: true
+    index: true
+    ingest: auto
+    wiki: selective
+
+  Library:
+    discover: true
+    index: metadata_only
+    ingest: via_normalized_source
+    wiki: never_directly
+
+  wiki:
+    discover: true
+    index: true
+    ingest: never
+    wiki: derived
+
+  memory:
+    discover: true
+    index: true
+    ingest: memory_pipeline
+    wiki: never_by_default
+
+  .javis:
+    discover: false
+    index: false
+    ingest: never
+    wiki: never
+
+ignore_paths:
+  - .git
+  - .obsidian
+  - .javis
+  - attachments
+  - inbox
+  - Javis/loop-log
+
+manual_override:
+  field: javis
+  allowed_values:
+    - auto
+    - ignore
+    - index
+    - ingest
+    - wiki
