@@ -40,3 +40,11 @@ def test_protected_zones_never_ingest():
     zones = config["zones"]
     for zone in ("00 - Dashboard", "wiki", ".javis"):
         assert zones[zone]["ingest"] == "never"
+
+
+def test_capability_and_system_trees_are_excluded_from_brain_scan():
+    validator = _load_validator()
+    config = validator.load_yaml(TEMPLATE / "System/BrainOS/config.yml")
+    ignored = set(config["ignore_paths"])
+    required = {"skills", "agents", "workflows", "plugins", "System", "Javis", ".javis"}
+    assert required <= ignored
