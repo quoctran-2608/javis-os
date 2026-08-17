@@ -10,7 +10,7 @@ from typing import Any
 
 from .config import BrainOSConfig
 from .db import BrainIndex, utc_now
-from .frontmatter import FrontmatterError, load_markdown
+from .frontmatter import FrontmatterError, parse_markdown_text
 from .models import BrainFile, DocumentType, ProcessingState
 from .paths import BrainPaths
 
@@ -123,8 +123,9 @@ def _classification_options(config: BrainOSConfig) -> dict[str, Any]:
         "candidate_confidence": float(raw.get("candidate_confidence", 0.55)),
         "explicit_type_field": str(raw.get("explicit_type_field", "javis_type") or "javis_type"),
         "fallback_type_field": str(raw.get("fallback_type_field", "type") or "type"),
+        "max_frontmatter_bytes": int(raw.get("max_frontmatter_bytes", 65536)),
         "manual_mode_field": str(manual.get("field", "javis") or "javis"),
-        "allowed_modes": tuple(str(v) for v in allowed_modes),
+        "allowed_modes": tuple(str(v).strip().casefold() for v in allowed_modes),
     }
 
 
@@ -198,18 +199,60 @@ def _filename_hint(path: str) -> tuple[DocumentType | None, float, str]:
     return None, 0.0, ""
 
 
+def _read_frontmatter_bounded(path: Path, *, max_bytes: int) -> tuple[dict[str, Any], list[str]]:
+    """Read only the YAML header, never the whole living note.
+
+    The probe stops at the closing `---` and refuses abnormally large frontmatter.
+    Classification can still fall back to path/zone signals if this probe fails.
+    """
+
+    warnings: list[str] = []
+    try:
+        with path.open("rb") as fh:
+            first = fh.readline()
+            if not first:
+                return {}, warnings
+
+            marker = first[3:] if first.startswith(b"\xef\xbb\xbf") else first
+            if marker.rstrip(b"\r\n") != b"---":
+                return {}, warnings
+
+            total = len(first)
+            chunks = [first]
+            while True:
+                line = fh.readline()
+                if not line:
+                    warnings.append("frontmatter_unclosed")
+                    return {}, warnings
+                total += len(line)
+                if total > max_bytes:
+                    warnings.append(f"frontmatter_too_large:{total}>{max_bytes}")
+                    return {}, warnings
+                chunks.append(line)
+                if line.rstrip(b"\r\n") == b"---":
+                    break
+
+        text = b"".join(chunks).decode("utf-8")
+        document = parse_markdown_text(text)
+        return dict(document.metadata or {}), warnings
+    except UnicodeDecodeError as exc:
+        warnings.append(f"frontmatter_not_utf8:{exc}")
+    except FrontmatterError as exc:
+        warnings.append(f"frontmatter_invalid:{exc}")
+    except OSError as exc:
+        warnings.append(f"frontmatter_unreadable:{type(exc).__name__}:{exc}")
+    return {}, warnings
+
+
 def _frontmatter_signals(
     config: BrainOSConfig,
     path: Path,
 ) -> tuple[DocumentType | None, str, str, list[str]]:
     opts = _classification_options(config)
-    warnings: list[str] = []
-    try:
-        doc = load_markdown(path)
-    except (FrontmatterError, OSError) as exc:
-        return None, "auto", "", [f"frontmatter_unreadable:{type(exc).__name__}:{exc}"]
-
-    metadata = doc.metadata or {}
+    metadata, warnings = _read_frontmatter_bounded(
+        path,
+        max_bytes=int(opts["max_frontmatter_bytes"]),
+    )
     explicit_field = opts["explicit_type_field"]
     fallback_field = opts["fallback_type_field"]
 
