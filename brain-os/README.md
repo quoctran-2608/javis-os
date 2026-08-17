@@ -108,6 +108,49 @@ Scanner hiện làm được:
 - snapshot mặc định tối đa 2 MiB/file và có thể xóa/rebuild mà không mất source of truth;
 - scanner không tự thêm `javis_id` vào note: ID mới ở Chặng 3 chỉ được giữ trong DB nếu note chưa có ID.
 
+### Chặng 4 - Document Type Classifier: hoàn tất
+
+Bổ sung:
+
+```text
+brain_os_lib/
+└── classifier.py
+```
+
+Classifier Chặng 4 **không gọi AI**. Nó áp dụng deterministic signals trước và lưu quyết định vào derived SQLite state.
+
+Các loại tài liệu hiện có:
+
+```text
+living_note
+reference_source
+scratch
+daily
+weekly
+monthly
+future
+memory
+derived_wiki
+system
+binary_source
+unknown
+```
+
+Nguyên tắc quan trọng:
+
+- `Document Type` mô tả **vòng đời/ý nghĩa của tài liệu**, không đồng nghĩa với `ingest`, `wiki`, `move` hoặc bất kỳ hành động nào.
+- tín hiệu mạnh như zone đã cấu hình hoặc `javis_type` hợp lệ có thể được deterministic classifier chấp nhận;
+- tín hiệu yếu như tên file `2026-08-17.md` ngoài zone chỉ tạo `proposed_type: daily` + `needs_ai: true`; DB vẫn giữ `document_type: unknown`;
+- `javis_type` là override type chuyên dụng; field `type` chỉ là fallback khi giá trị đúng một Brain OS type đã biết;
+- processing override `javis: ignore|index|ingest|wiki|auto` được ghi nhận riêng, không bị trộn với document type;
+- `javis: index` hoặc `javis: ignore` có thể tránh AI classification vì người dùng đã chỉ rõ route an toàn, nhưng classifier vẫn không bịa document type;
+- classifier đọc frontmatter theo bounded probe, mặc định tối đa 64 KiB; nó không đọc cả Living Note dài chỉ để lấy YAML đầu file;
+- malformed/oversized frontmatter không làm chết cả batch: classifier ghi warning rồi fallback sang tín hiệu zone/path;
+- cache classification dựa trên `classifier_version + policy_id + content_hash + path`, nên rename/move, sửa nội dung hoặc đổi policy sẽ tự làm cache stale;
+- move Living Note từ `Notes/` sang `sources/` có thể được reclassify từ `living_note` sang `reference_source` mà vẫn giữ `source_id` của Chặng 3;
+- `MISSING` record không được classifier đụng vào;
+- mọi classification metadata đều nằm trong `.javis/brain-index.db`, không được ghi ngược vào note.
+
 CLI hiện hỗ trợ:
 
 ```bash
@@ -119,10 +162,14 @@ python skills/brain-manager/scripts/brain_os.py init
 python skills/brain-manager/scripts/brain_os.py scan
 python skills/brain-manager/scripts/brain_os.py scan --full-hash
 python skills/brain-manager/scripts/brain_os.py reconcile
+python skills/brain-manager/scripts/brain_os.py classify
+python skills/brain-manager/scripts/brain_os.py classify --path "Notes/example.md"
+python skills/brain-manager/scripts/brain_os.py classify --force
+python skills/brain-manager/scripts/brain_os.py classifications --needs-ai --limit 50
 python skills/brain-manager/scripts/brain_os.py events --limit 50
 ```
 
-`status`, `doctor`, `config`, `fingerprint` là read-only. `init`, `scan`, `reconcile` chỉ ghi **derived state** trong `.javis/`; chúng không move, rename, rewrite, ingest hoặc Wiki hóa note người dùng.
+`status`, `doctor`, `config`, `fingerprint`, `classifications` và `events` là read-only. `init`, `scan`, `reconcile`, `classify` chỉ ghi **derived state** trong `.javis/`; chúng không move, rename, rewrite, ingest hoặc Wiki hóa note người dùng.
 
 ## Gate kiểm thử
 
@@ -134,10 +181,11 @@ pytest -q \
   brain-os/tests/test_foundation.py \
   brain-os/tests/test_core_stage2.py \
   brain-os/tests/test_stage3_scanner.py \
-  brain-os/tests/test_stage3_identity_edges.py
+  brain-os/tests/test_stage3_identity_edges.py \
+  brain-os/tests/test_stage4_classifier.py
 ```
 
-Các case Chặng 3 bắt buộc phải giữ:
+Các invariant Chặng 3 bắt buộc phải giữ:
 
 - first scan chỉ nhận file Markdown hợp lệ;
 - scan thứ hai không sinh event `UNCHANGED` rác;
@@ -153,9 +201,25 @@ Các case Chặng 3 bắt buộc phải giữ:
 - lỗi traversal phải suppress delete;
 - CLI scan phải báo `writes_user_files: false` và chỉ tạo state dưới `.javis/`.
 
-## Những gì Chặng 3 vẫn cố ý CHƯA làm
+Các invariant Chặng 4:
 
-- chưa AI classification;
+- zone chuẩn được deterministic classify với confidence cao;
+- `javis_type` hợp lệ có provenance và có thể override zone;
+- field `type` lạ như `meeting` không bị Brain OS chiếm nghĩa;
+- tín hiệu tên file yếu chỉ là proposal, không được commit speculative type;
+- unknown + `javis: index` không cần AI nhưng vẫn giữ type `unknown`;
+- malformed hoặc oversized frontmatter không làm chết batch;
+- frontmatter probe bị chặn trong 1 KiB..1 MiB, mặc định 64 KiB;
+- classification cache invalid khi hash/path/policy thay đổi;
+- move qua zone phải reclassify đúng nhưng giữ stable identity;
+- missing record không reclassify;
+- CLI `classify` phải báo `uses_ai: false`, `writes_user_files: false`;
+- pure classifier không mutate file người dùng.
+
+## Những gì Chặng 4 vẫn cố ý CHƯA làm
+
+- chưa gọi AI cho các record `needs_ai`;
+- chưa quyết định giá trị/durability của từng đoạn Living Note;
 - chưa Folder Category Manager apply thật;
 - chưa Tag Taxonomy apply thật;
 - chưa auto move;
