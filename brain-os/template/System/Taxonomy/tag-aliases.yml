@@ -1,0 +1,59 @@
+schema_version: 1
+
+# Alias keys are matched case-insensitively after trimming whitespace and a leading '#'.
+# They must always point to a canonical tag declared in tags.yml.
+aliases:
+  dieutoihocduoc: personal/learning
+  "điều tôi học được": personal/learning
+  "dieu toi hoc duoc": personal/learning
+
+  mylife: personal/life
+  "my life": personal/life
+  "cuộc sống": personal/life
+  "cuoc song": personal/life
+
+  "sức khỏe": personal/health
+  "suc khoe": personal/health
+
+  "kế toán": accounting
+  "ke toan": accounting
+
+  tax: accounting/tax
+  "thuế": accounting/tax
+  thue: accounting/tax
+
+  vat: accounting/tax/vat
+  gtgt: accounting/tax/vat
+  "thuế gtgt": accounting/tax/vat
+  "thue gtgt": accounting/tax/vat
+  "thuế-gtgt": accounting/tax/vat
+  "thue-gtgt": accounting/tax/vat
+  "thue-vat": accounting/tax/vat
+
+  bhxh: accounting/hr-bhxh
+  "bảo hiểm xã hội": accounting/hr-bhxh
+  "bao hiem xa hoi": accounting/hr-bhxh
+
+  "quản trị": business/management
+  "quan tri": business/management
+
+  "vận hành": business/operations
+  "van hanh": business/operations
+
+  finance: business/finance
+  "tài chính": business/finance
+  "tai chinh": business/finance
+
+  "cash flow": business/finance/cash-flow
+  "dòng tiền": business/finance/cash-flow
+  "dong tien": business/finance/cash-flow
+
+  "trí tuệ nhân tạo": ai
+  "tri tue nhan tao": ai
+
+  tech: technology
+  "công nghệ": technology
+  "cong nghe": technology
+
+  "phát triển bản thân": personal-development
+  "phat trien ban than": personal-development
