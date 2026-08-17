@@ -2,7 +2,8 @@
 
 This package intentionally contains no LLM calls. It owns configuration, paths,
 hashing, frontmatter, stable identity, the rebuildable SQLite index, filesystem
-change detection, incremental text diffing and deterministic document typing.
+change detection, incremental text diffing, deterministic document typing and
+Stage 5 dry-run folder/tag taxonomy planning.
 """
 
 from .models import (
@@ -21,4 +22,4 @@ __all__ = [
     "ProcessingState",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
