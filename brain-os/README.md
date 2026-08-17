@@ -59,7 +59,7 @@ Các cây capability/vận hành như `skills/`, `agents/`, `workflows/`, `plugi
 
 ### Chặng 2 - Deterministic core: hoàn tất
 
-Core hiện có:
+Core nền:
 
 ```text
 skills/brain-manager/scripts/
@@ -75,9 +75,39 @@ skills/brain-manager/scripts/
     └── identity.py
 ```
 
-Chặng 2 **chưa scan vault, chưa move file, chưa classify bằng AI và chưa ingest**.
+### Chặng 3 - Scanner + Change Detection: hoàn tất
 
-CLI an toàn hiện hỗ trợ:
+Bổ sung:
+
+```text
+brain_os_lib/
+├── changes.py
+├── scanner.py
+├── diffing.py
+└── reconcile.py
+```
+
+Chặng 3 cho Brain OS có khả năng **quan sát** vault nhưng vẫn chưa cho phép AI hoặc automation thay đổi note.
+
+Scanner hiện làm được:
+
+- quét `.md` và `.markdown`;
+- bỏ qua `.javis`, `.obsidian`, `skills`, `agents`, `workflows`, `plugins`, `System`, `Javis`, cache/attachments;
+- không follow symlink;
+- dùng SHA-256 và chống file bị Obsidian sửa giữa lúc hash;
+- scan nhanh reuse hash nếu size + mtime chưa đổi;
+- `reconcile` full-hash để kiểm tra toàn vẹn định kỳ;
+- phát hiện `CREATED`, `MODIFIED`, `RENAMED`, `MOVED`, `DELETED`;
+- rename/move chỉ match khi có bằng chứng duy nhất theo thứ tự `javis_id → inode/device → exact content hash`;
+- nếu match mơ hồ thì không đoán;
+- delete chỉ chuyển state thành `MISSING`, không xóa dữ liệu hoặc Wiki;
+- nếu traversal có lỗi thì suppress toàn bộ deletion detection của vòng đó;
+- lưu change journal trong SQLite;
+- lưu snapshot text phái sinh dưới `.javis/snapshots/` để tạo incremental line diff;
+- snapshot mặc định tối đa 2 MiB/file và có thể xóa/rebuild mà không mất source of truth;
+- scanner không tự thêm `javis_id` vào note: ID mới ở Chặng 3 chỉ được giữ trong DB nếu note chưa có ID.
+
+CLI hiện hỗ trợ:
 
 ```bash
 python skills/brain-manager/scripts/brain_os.py doctor
@@ -85,29 +115,49 @@ python skills/brain-manager/scripts/brain_os.py status
 python skills/brain-manager/scripts/brain_os.py config
 python skills/brain-manager/scripts/brain_os.py fingerprint "Notes/example.md"
 python skills/brain-manager/scripts/brain_os.py init
+python skills/brain-manager/scripts/brain_os.py scan
+python skills/brain-manager/scripts/brain_os.py scan --full-hash
+python skills/brain-manager/scripts/brain_os.py reconcile
+python skills/brain-manager/scripts/brain_os.py events --limit 50
 ```
 
-`status`, `doctor`, `config`, `fingerprint` là read-only. `init` chỉ tạo state directory + `.javis/brain-index.db`; không tạo/move/sửa note.
+`status`, `doctor`, `config`, `fingerprint` là read-only. `init`, `scan`, `reconcile` chỉ ghi **derived state** trong `.javis/`; chúng không move, rename, rewrite, ingest hoặc Wiki hóa note người dùng.
 
-## Kiểm thử trước khi sang chặng tiếp theo
+## Gate kiểm thử
 
 Từ root repo:
 
 ```bash
 python -m compileall -q brain-os/template/skills/brain-manager/scripts
-pytest -q brain-os/tests/test_foundation.py brain-os/tests/test_core_stage2.py
+pytest -q \
+  brain-os/tests/test_foundation.py \
+  brain-os/tests/test_core_stage2.py \
+  brain-os/tests/test_stage3_scanner.py
 ```
 
-Các gate quan trọng của Chặng 2:
+Các case Chặng 3 bắt buộc phải giữ:
 
-- SQLite index là derived/rebuildable, không phải source of truth.
-- DB từ chối downgrade nếu schema trên đĩa mới hơn code.
-- Path traversal ra ngoài Brain bị chặn.
-- Hash dùng SHA-256 và phát hiện file thay đổi trong lúc đang hash.
-- Frontmatter update không rewrite file nếu metadata không đổi.
-- Khi phải thêm metadata, body Markdown, BOM và kiểu newline được giữ.
-- `javis_id` có dry-run trước khi ghi.
-- CLI `status`/`doctor` không vô tình tạo DB.
-- `init` không tạo `Notes/`, `wiki/` hay thay đổi nội dung người dùng.
+- first scan chỉ nhận file Markdown hợp lệ;
+- scan thứ hai không sinh event `UNCHANGED` rác;
+- sửa Living Note sinh incremental diff mà không rewrite note;
+- rename giữ nguyên `source_id`;
+- move + edit chỉ được nhận là cùng file khi có bằng chứng đủ mạnh;
+- hash trùng nhiều file không được đoán rename;
+- delete → `MISSING`, không xóa record/snapshot;
+- restore giữ identity;
+- `javis_id` trong frontmatter có ưu tiên cao nhất;
+- lỗi traversal phải suppress delete;
+- CLI scan phải báo `writes_user_files: false` và chỉ tạo state dưới `.javis/`.
+
+## Những gì Chặng 3 vẫn cố ý CHƯA làm
+
+- chưa AI classification;
+- chưa Folder Category Manager apply thật;
+- chưa Tag Taxonomy apply thật;
+- chưa auto move;
+- chưa auto create category/tag;
+- chưa ingest;
+- chưa Memory/Wiki candidate;
+- chưa Brain Watch loop tự động.
 
 Mặc định `System/BrainOS/config.yml` vẫn để `dry_run: true`, tắt auto-move và auto-create taxonomy cho tới khi các gate kiểm thử ở những chặng sau đạt.
