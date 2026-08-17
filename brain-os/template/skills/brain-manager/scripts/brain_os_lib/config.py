@@ -43,6 +43,13 @@ def _safe_rel_path(value: Any, *, field: str) -> str:
     return "/".join(parts)
 
 
+def _safe_field_name(value: Any, *, field: str) -> str:
+    raw = str(value or "").strip()
+    if not raw or any(ch in raw for ch in "\r\n"):
+        raise BrainOSConfigError(f"{field} phải là tên field không rỗng: {value!r}")
+    return raw
+
+
 @dataclass(frozen=True)
 class BrainOSConfig:
     brain_root: Path
@@ -131,6 +138,54 @@ class BrainOSConfig:
                 f"{core_path}: Brain OS V1 chỉ hỗ trợ scan.deletion_policy: mark_missing"
             )
 
+        classification = core.get("classification") or {}
+        if not isinstance(classification, dict):
+            raise BrainOSConfigError(f"{core_path}: classification phải là mapping")
+        try:
+            accept_confidence = float(classification.get("accept_confidence", 0.80))
+            candidate_confidence = float(classification.get("candidate_confidence", 0.55))
+            auto_move_confidence = float(classification.get("auto_move_confidence", 0.80))
+        except (TypeError, ValueError) as exc:
+            raise BrainOSConfigError(
+                f"{core_path}: classification confidence phải là số"
+            ) from exc
+        if not 0.0 <= candidate_confidence <= accept_confidence <= 1.0:
+            raise BrainOSConfigError(
+                f"{core_path}: cần 0 <= candidate_confidence <= accept_confidence <= 1"
+            )
+        if not 0.0 <= auto_move_confidence <= 1.0:
+            raise BrainOSConfigError(
+                f"{core_path}: classification.auto_move_confidence phải trong 0..1"
+            )
+        _safe_field_name(
+            classification.get("explicit_type_field", "javis_type"),
+            field="classification.explicit_type_field",
+        )
+        _safe_field_name(
+            classification.get("fallback_type_field", "type"),
+            field="classification.fallback_type_field",
+        )
+        if classification.get("default_when_uncertain", "index") not in {"index", "needs_ai"}:
+            raise BrainOSConfigError(
+                f"{core_path}: classification.default_when_uncertain không hợp lệ"
+            )
+
+        manual = core.get("manual_override") or {}
+        if not isinstance(manual, dict):
+            raise BrainOSConfigError(f"{core_path}: manual_override phải là mapping")
+        _safe_field_name(manual.get("field", "javis"), field="manual_override.field")
+        allowed_modes = manual.get("allowed_values") or ["auto", "ignore", "index", "ingest", "wiki"]
+        if not isinstance(allowed_modes, list) or not allowed_modes:
+            raise BrainOSConfigError(
+                f"{core_path}: manual_override.allowed_values phải là list không rỗng"
+            )
+        allowed_set = {str(value or "").strip().casefold() for value in allowed_modes}
+        supported_modes = {"auto", "ignore", "index", "ingest", "wiki"}
+        if "auto" not in allowed_set or not allowed_set.issubset(supported_modes):
+            raise BrainOSConfigError(
+                f"{core_path}: manual_override.allowed_values chỉ hỗ trợ {sorted(supported_modes)} và phải có 'auto'"
+            )
+
         return cls(
             brain_root=root,
             core=core,
@@ -176,6 +231,8 @@ class BrainOSConfig:
 
     def summary(self) -> dict[str, Any]:
         scan = self.core.get("scan") or {}
+        classification = self.core.get("classification") or {}
+        manual = self.core.get("manual_override") or {}
         return {
             "schema_version": SCHEMA_VERSION,
             "brain_root": str(self.brain_root),
@@ -191,5 +248,17 @@ class BrainOSConfig:
                 "hash_retries": int(scan.get("hash_retries", 1)),
                 "max_snapshot_bytes": int(scan.get("max_snapshot_bytes", 2 * 1024 * 1024)),
                 "deletion_policy": str(scan.get("deletion_policy", "mark_missing")),
+            },
+            "classification": {
+                "accept_confidence": float(classification.get("accept_confidence", 0.80)),
+                "candidate_confidence": float(classification.get("candidate_confidence", 0.55)),
+                "auto_move_confidence": float(classification.get("auto_move_confidence", 0.80)),
+                "explicit_type_field": str(classification.get("explicit_type_field", "javis_type")),
+                "fallback_type_field": str(classification.get("fallback_type_field", "type")),
+                "default_when_uncertain": str(classification.get("default_when_uncertain", "index")),
+            },
+            "manual_override": {
+                "field": str(manual.get("field", "javis")),
+                "allowed_values": list(manual.get("allowed_values") or ["auto", "ignore", "index", "ingest", "wiki"]),
             },
         }
