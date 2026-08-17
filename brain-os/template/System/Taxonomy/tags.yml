@@ -1,0 +1,86 @@
+schema_version: 1
+
+# Canonical tags are deliberately small and reusable. A note may have several tags,
+# but concepts that belong in Wiki/wikilinks should not automatically become tags.
+canonical_tags:
+  personal/learning:
+    id: tag_personal_learning
+    label: Personal / Learning
+    description: Ghi chú học được, reflection và bài học cá nhân có giá trị dùng lại.
+
+  personal/life:
+    id: tag_personal_life
+    label: Personal / Life
+    description: Ghi chú về cuộc sống cá nhân nói chung.
+
+  personal/health:
+    id: tag_personal_health
+    label: Personal / Health
+    description: Sức khỏe và trạng thái thể chất cá nhân.
+
+  accounting:
+    id: tag_accounting
+    label: Accounting
+    description: Kế toán nói chung.
+
+  accounting/tax:
+    id: tag_accounting_tax
+    label: Accounting / Tax
+    description: Thuế và nghiệp vụ thuế.
+
+  accounting/tax/vat:
+    id: tag_accounting_tax_vat
+    label: Accounting / Tax / VAT
+    description: Thuế giá trị gia tăng (GTGT/VAT).
+
+  accounting/tax/legal:
+    id: tag_accounting_tax_legal
+    label: Accounting / Tax / Legal
+    description: Văn bản, quy định và pháp lý thuế.
+
+  accounting/hr-bhxh:
+    id: tag_accounting_hr_bhxh
+    label: Accounting / HR-BHXH
+    description: Nhân sự, lao động và bảo hiểm xã hội.
+
+  business/management:
+    id: tag_business_management
+    label: Business / Management
+    description: Quản trị doanh nghiệp.
+
+  business/operations:
+    id: tag_business_operations
+    label: Business / Operations
+    description: Hệ thống, quy trình và vận hành doanh nghiệp.
+
+  business/finance:
+    id: tag_business_finance
+    label: Business / Finance
+    description: Tài chính doanh nghiệp nói chung.
+
+  business/finance/cash-flow:
+    id: tag_business_finance_cash_flow
+    label: Business / Finance / Cash Flow
+    description: Dòng tiền và quản trị dòng tiền.
+
+  ai:
+    id: tag_ai
+    label: AI
+    description: Trí tuệ nhân tạo.
+
+  technology:
+    id: tag_technology
+    label: Technology
+    description: Công nghệ và công cụ kỹ thuật.
+
+  personal-development:
+    id: tag_personal_development
+    label: Personal Development
+    description: Phát triển bản thân theo nghĩa tổng quát.
+
+policy:
+  reuse_existing_first: true
+  create_new: propose_only
+  max_depth: 3
+  max_per_note: 6
+  do_not_promote_every_concept_to_tag: true
