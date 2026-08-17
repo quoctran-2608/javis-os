@@ -1,0 +1,194 @@
+schema_version: 1
+
+# Folder = one stable primary home. Paths below are relative to each scope root.
+# Reuse existing categories first. New categories are proposals by default, not automatic writes.
+scopes:
+  living_notes:
+    roots:
+      - Notes
+    fallback: _Unsorted
+    categories:
+      personal:
+        id: notes_personal
+        label: Personal
+        path: Personal
+        aliases:
+          - cá nhân
+          - ca nhan
+          - personal
+        children:
+          learning:
+            id: notes_personal_learning
+            label: Learning
+            path: Personal/Learning
+            aliases:
+              - học tập
+              - hoc tap
+              - điều tôi học được
+              - dieu toi hoc duoc
+          life:
+            id: notes_personal_life
+            label: Life
+            path: Personal/Life
+            aliases:
+              - cuộc sống
+              - cuoc song
+              - my life
+              - mylife
+          health:
+            id: notes_personal_health
+            label: Health
+            path: Personal/Health
+            aliases:
+              - sức khỏe
+              - suc khoe
+              - health
+
+      work:
+        id: notes_work
+        label: Work
+        path: Work
+        aliases:
+          - công việc
+          - cong viec
+          - work
+
+      ideas:
+        id: notes_ideas
+        label: Ideas
+        path: Ideas
+        aliases:
+          - ý tưởng
+          - y tuong
+          - ideas
+
+  knowledge:
+    roots:
+      - sources
+      - Library
+    fallback: _Unsorted
+    categories:
+      accounting:
+        id: knowledge_accounting
+        label: Accounting
+        path: Accounting
+        aliases:
+          - kế toán
+          - ke toan
+          - accounting
+        children:
+          tax:
+            id: knowledge_accounting_tax
+            label: Tax
+            path: Accounting/Tax
+            aliases:
+              - thuế
+              - thue
+              - tax
+              - taxation
+            children:
+              legal:
+                id: knowledge_accounting_tax_legal
+                label: Legal
+                path: Accounting/Tax/Legal
+                aliases:
+                  - pháp lý thuế
+                  - phap ly thue
+                  - văn bản thuế
+                  - van ban thue
+                  - tax legal
+
+          financial_accounting:
+            id: knowledge_accounting_financial
+            label: Financial Accounting
+            path: Accounting/Financial Accounting
+            aliases:
+              - kế toán tài chính
+              - ke toan tai chinh
+              - financial accounting
+
+          hr_social_insurance:
+            id: knowledge_accounting_hr_social_insurance
+            label: HR & Social Insurance
+            path: Accounting/HR-BHXH
+            aliases:
+              - bhxh
+              - bảo hiểm xã hội
+              - bao hiem xa hoi
+              - nhân sự
+              - nhan su
+              - social insurance
+
+      business:
+        id: knowledge_business
+        label: Business
+        path: Business
+        aliases:
+          - kinh doanh
+          - business
+        children:
+          management:
+            id: knowledge_business_management
+            label: Management
+            path: Business/Management
+            aliases:
+              - quản trị
+              - quan tri
+              - management
+
+          operations:
+            id: knowledge_business_operations
+            label: Operations
+            path: Business/Operations
+            aliases:
+              - vận hành
+              - van hanh
+              - operations
+
+          finance:
+            id: knowledge_business_finance
+            label: Finance
+            path: Business/Finance
+            aliases:
+              - tài chính
+              - tai chinh
+              - finance
+              - cash flow
+              - dòng tiền
+              - dong tien
+
+      ai:
+        id: knowledge_ai
+        label: AI
+        path: AI
+        aliases:
+          - ai
+          - artificial intelligence
+          - trí tuệ nhân tạo
+          - tri tue nhan tao
+
+      technology:
+        id: knowledge_technology
+        label: Technology
+        path: Technology
+        aliases:
+          - công nghệ
+          - cong nghe
+          - technology
+          - tech
+
+      personal_development:
+        id: knowledge_personal_development
+        label: Personal Development
+        path: Personal Development
+        aliases:
+          - phát triển bản thân
+          - phat trien ban than
+          - personal development
+
+creation_policy:
+  default: propose_only
+  prefer_existing_parent: true
+  min_depth: 1
+  max_depth: 3
+  never_create_from_single_keyword: true
