@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Brain OS deterministic CLI.
 
-Stage 4 adds deterministic document classification on top of Stage 3 filesystem
-observation. All commands in this file still avoid LLM calls. `scan`, `reconcile`
-and `classify` write only rebuildable derived state under `.javis/`; they never
-move, rename, annotate, ingest or Wiki-ize user notes.
+Stage 5 adds a deterministic, dry-run taxonomy planner on top of Stage 4 document
+classification. All commands here still avoid LLM calls. `scan`, `reconcile`,
+`classify` and `taxonomy` write only rebuildable derived state under `.javis/`;
+they never move, rename, annotate, ingest or Wiki-ize user notes.
 """
 
 from __future__ import annotations
@@ -21,6 +21,12 @@ from brain_os_lib.db import BrainIndex, BrainIndexError, SCHEMA_VERSION
 from brain_os_lib.hashing import fingerprint_file
 from brain_os_lib.paths import BrainPaths
 from brain_os_lib.reconcile import list_events, reconcile_brain
+from brain_os_lib.taxonomy import (
+    TaxonomyError,
+    TaxonomyRegistry,
+    list_taxonomy_plans,
+    plan_brain_taxonomy,
+)
 
 
 def infer_brain_root(script_path: Path) -> Path | None:
@@ -128,6 +134,21 @@ def cmd_doctor(config: BrainOSConfig) -> dict[str, Any]:
 
     scan_cfg = config.core.get("scan") or {}
     classification_cfg = config.core.get("classification") or {}
+    taxonomy_cfg = config.core.get("taxonomy") or {}
+
+    taxonomy_error = ""
+    taxonomy_counts: dict[str, int] = {}
+    try:
+        registry = TaxonomyRegistry.from_config(config)
+        taxonomy_counts = {
+            "categories": len(registry.categories),
+            "canonical_tags": len(registry.tags),
+        }
+        taxonomy_valid = True
+    except TaxonomyError as exc:
+        taxonomy_valid = False
+        taxonomy_error = str(exc)
+
     checks = {
         "brain_root_exists": config.brain_root.is_dir(),
         "config_loaded": True,
@@ -145,13 +166,33 @@ def cmd_doctor(config: BrainOSConfig) -> dict[str, Any]:
         "classification_candidate_confidence": float(
             classification_cfg.get("candidate_confidence", 0.55)
         ),
+        "taxonomy_registry_valid": taxonomy_valid,
+        "taxonomy_registry_counts": taxonomy_counts,
+        "taxonomy_max_text_probe_bytes": int(
+            taxonomy_cfg.get("max_text_probe_bytes", 131072)
+        ),
+        "taxonomy_auto_move_enabled": bool(
+            (config.core.get("folders") or {}).get("allow_auto_move", False)
+        ),
+        "taxonomy_auto_create_folder_enabled": bool(
+            (config.core.get("folders") or {}).get("allow_auto_create", False)
+        ),
+        "taxonomy_auto_create_tag_enabled": bool(
+            (config.core.get("tags") or {}).get("allow_auto_create", False)
+        ),
     }
+    if taxonomy_error:
+        checks["taxonomy_registry_error"] = taxonomy_error
 
     ok = bool(
         checks["brain_root_exists"]
         and checks["config_loaded"]
         and checks["state_path_inside_brain"]
         and checks["scan_follow_symlinks"] is False
+        and checks["taxonomy_registry_valid"]
+        and checks["taxonomy_auto_move_enabled"] is False
+        and checks["taxonomy_auto_create_folder_enabled"] is False
+        and checks["taxonomy_auto_create_tag_enabled"] is False
     )
     return {
         "ok": ok,
@@ -234,6 +275,53 @@ def cmd_classifications(
     }
 
 
+def cmd_taxonomy(
+    config: BrainOSConfig,
+    *,
+    force: bool = False,
+    paths: list[str] | None = None,
+) -> dict[str, Any]:
+    report = plan_brain_taxonomy(
+        config,
+        force=force,
+        paths=set(paths or []),
+    )
+    return {
+        "ok": report.ok,
+        "action": "taxonomy",
+        "initialized": report.initialized,
+        "dry_run": True,
+        "writes_user_files": False,
+        "moves_user_files": False,
+        "mutates_frontmatter": False,
+        "derived_state_only": True,
+        "uses_ai": False,
+        "report": report.to_dict(),
+    }
+
+
+def cmd_taxonomy_plans(
+    config: BrainOSConfig,
+    *,
+    would_move_only: bool = False,
+    unresolved_only: bool = False,
+    limit: int = 100,
+) -> dict[str, Any]:
+    rows = list_taxonomy_plans(
+        config,
+        would_move_only=would_move_only,
+        unresolved_only=unresolved_only,
+        limit=limit,
+    )
+    return {
+        "ok": True,
+        "action": "taxonomy-plans",
+        "initialized": config.db_path.is_file(),
+        "read_only": True,
+        "plans": rows,
+    }
+
+
 def cmd_events(
     config: BrainOSConfig,
     *,
@@ -313,6 +401,33 @@ def build_parser() -> argparse.ArgumentParser:
     classifications.add_argument("--needs-ai", action="store_true")
     classifications.add_argument("--limit", type=int, default=100)
 
+    taxonomy = sub.add_parser(
+        "taxonomy",
+        help=(
+            "Plan existing Folder Category + canonical tags in dry-run mode; "
+            "never moves files or rewrites frontmatter."
+        ),
+    )
+    taxonomy.add_argument(
+        "--force",
+        action="store_true",
+        help="Recompute even when taxonomy hash/path/policy cache is valid.",
+    )
+    taxonomy.add_argument(
+        "--path",
+        action="append",
+        default=[],
+        help="Plan only this exact Brain-relative indexed path; repeatable.",
+    )
+
+    taxonomy_plans = sub.add_parser(
+        "taxonomy-plans",
+        help="Read persisted Stage 5 taxonomy plans.",
+    )
+    taxonomy_plans.add_argument("--would-move", action="store_true")
+    taxonomy_plans.add_argument("--unresolved", action="store_true")
+    taxonomy_plans.add_argument("--limit", type=int, default=100)
+
     events = sub.add_parser("events", help="Show filesystem change journal.")
     events.add_argument("--limit", type=int, default=50)
     events.add_argument("--unhandled", action="store_true")
@@ -353,6 +468,19 @@ def main() -> int:
                 needs_ai_only=bool(args.needs_ai),
                 limit=args.limit,
             )
+        elif args.command == "taxonomy":
+            report = cmd_taxonomy(
+                config,
+                force=bool(args.force),
+                paths=list(args.path or []),
+            )
+        elif args.command == "taxonomy-plans":
+            report = cmd_taxonomy_plans(
+                config,
+                would_move_only=bool(args.would_move),
+                unresolved_only=bool(args.unresolved),
+                limit=args.limit,
+            )
         elif args.command == "events":
             report = cmd_events(
                 config,
@@ -365,7 +493,13 @@ def main() -> int:
 
         _json(report, compact=args.compact)
         return 0 if report.get("ok") else 2
-    except (BrainOSConfigError, BrainIndexError, OSError, ValueError) as exc:
+    except (
+        BrainOSConfigError,
+        BrainIndexError,
+        TaxonomyError,
+        OSError,
+        ValueError,
+    ) as exc:
         _json(
             {
                 "ok": False,
