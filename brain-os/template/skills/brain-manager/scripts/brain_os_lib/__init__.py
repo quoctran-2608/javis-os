@@ -1,8 +1,8 @@
-"""Deterministic foundation for Brain OS V1.
+"""Deterministic core for Brain OS V1.
 
-This package intentionally contains no LLM calls.  It owns the boring parts:
-configuration, paths, hashing, frontmatter, stable identity and the rebuildable
-SQLite index.
+This package intentionally contains no LLM calls. It owns the boring parts:
+configuration, paths, hashing, frontmatter, stable identity, the rebuildable
+SQLite index, filesystem change detection and incremental text diffing.
 """
 
 from .models import (
@@ -21,4 +21,4 @@ __all__ = [
     "ProcessingState",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
