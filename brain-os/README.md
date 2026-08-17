@@ -100,6 +100,7 @@ Scanner hiện làm được:
 - phát hiện `CREATED`, `MODIFIED`, `RENAMED`, `MOVED`, `DELETED`;
 - rename/move chỉ match khi có bằng chứng duy nhất theo thứ tự `javis_id → inode/device → exact content hash`;
 - nếu match mơ hồ thì không đoán;
+- duplicate `javis_id` trong cùng một scan bị vô hiệu hóa cho identity matching để không file nào “chiếm” ID theo thứ tự duyệt;
 - delete chỉ chuyển state thành `MISSING`, không xóa dữ liệu hoặc Wiki;
 - nếu traversal có lỗi thì suppress toàn bộ deletion detection của vòng đó;
 - lưu change journal trong SQLite;
@@ -132,7 +133,8 @@ python -m compileall -q brain-os/template/skills/brain-manager/scripts
 pytest -q \
   brain-os/tests/test_foundation.py \
   brain-os/tests/test_core_stage2.py \
-  brain-os/tests/test_stage3_scanner.py
+  brain-os/tests/test_stage3_scanner.py \
+  brain-os/tests/test_stage3_identity_edges.py
 ```
 
 Các case Chặng 3 bắt buộc phải giữ:
@@ -143,9 +145,11 @@ Các case Chặng 3 bắt buộc phải giữ:
 - rename giữ nguyên `source_id`;
 - move + edit chỉ được nhận là cùng file khi có bằng chứng đủ mạnh;
 - hash trùng nhiều file không được đoán rename;
+- duplicate `javis_id` không được quyết định bằng thứ tự duyệt file;
+- `.markdown` dùng cùng stable identity logic như `.md`;
 - delete → `MISSING`, không xóa record/snapshot;
 - restore giữ identity;
-- `javis_id` trong frontmatter có ưu tiên cao nhất;
+- `javis_id` trong frontmatter có ưu tiên cao nhất khi identity đó là duy nhất;
 - lỗi traversal phải suppress delete;
 - CLI scan phải báo `writes_user_files: false` và chỉ tạo state dưới `.javis/`.
 
