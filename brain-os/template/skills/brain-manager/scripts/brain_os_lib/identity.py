@@ -10,6 +10,7 @@ from .models import DocumentType, IdentityDecision
 
 GENERATED_ID_RE = re.compile(r"^(?:note|src|mem|file)_[0-9a-f]{12}$")
 SAFE_EXISTING_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$")
+MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
 
 def _prefix_for(document_type: DocumentType | str) -> str:
@@ -41,7 +42,7 @@ def valid_existing_id(value: str) -> bool:
 
 def read_javis_id(path: Path | str) -> str:
     fp = Path(path)
-    if fp.suffix.lower() != ".md" or not fp.is_file():
+    if fp.suffix.lower() not in MARKDOWN_SUFFIXES or not fp.is_file():
         return ""
     value = load_markdown(fp).metadata.get("javis_id")
     raw = str(value or "").strip()
@@ -83,7 +84,7 @@ def ensure_javis_id(
     )
     fp = Path(path)
 
-    if decision.generated and fp.suffix.lower() == ".md" and fp.is_file():
+    if decision.generated and fp.suffix.lower() in MARKDOWN_SUFFIXES and fp.is_file():
         update_frontmatter(
             fp,
             updates={"javis_id": decision.source_id},
