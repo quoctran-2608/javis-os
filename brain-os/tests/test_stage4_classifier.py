@@ -260,7 +260,29 @@ def test_malformed_frontmatter_does_not_kill_batch_and_zone_still_wins(brain: Pa
     item = _file(brain, "Notes/Bad.md")
     assert item.document_type == DocumentType.LIVING_NOTE
     warnings = item.metadata["classification"]["warnings"]
-    assert any("frontmatter_unreadable" in warning for warning in warnings)
+    assert any("frontmatter_invalid" in warning for warning in warnings)
+
+
+def test_oversized_frontmatter_is_bounded_and_zone_fallback_still_works(brain: Path):
+    config_path = brain / "System/BrainOS/config.yml"
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    data["classification"]["max_frontmatter_bytes"] = 1024
+    config_path.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    _write(
+        brain,
+        "Notes/HugeMeta.md",
+        "---\nblob: " + ("x" * 3000) + "\n---\n# Body\n",
+    )
+
+    cfg, report = _scan_and_classify(brain)
+    assert report.classified == 1
+    item = _file(brain, "Notes/HugeMeta.md")
+    assert item.document_type == DocumentType.LIVING_NOTE
+    warnings = item.metadata["classification"]["warnings"]
+    assert any("frontmatter_too_large" in warning for warning in warnings)
 
 
 def test_needs_ai_listing_is_read_only_and_filtered(brain: Path):
@@ -318,6 +340,16 @@ def test_config_rejects_inverted_classification_thresholds(brain: Path):
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     data["classification"]["candidate_confidence"] = 0.90
     data["classification"]["accept_confidence"] = 0.80
+    path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(BrainOSConfigError):
+        BrainOSConfig.load(brain)
+
+
+def test_config_rejects_unbounded_frontmatter_probe(brain: Path):
+    path = brain / "System/BrainOS/config.yml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["classification"]["max_frontmatter_bytes"] = 2 * 1024 * 1024
     path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
     with pytest.raises(BrainOSConfigError):
