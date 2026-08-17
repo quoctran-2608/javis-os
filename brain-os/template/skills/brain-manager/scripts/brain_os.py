@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Brain OS deterministic CLI.
 
-Stage 2 deliberately exposes only safe foundation commands. Scanning,
-classification, moving files and AI ingestion are added in later gates.
+Stage 3 adds read-only filesystem observation and writes only derived state
+under `.javis/` (SQLite + incremental-diff snapshots). It still does not move,
+rename, annotate, classify with AI, ingest or create Wiki pages.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from brain_os_lib.config import BrainOSConfig, BrainOSConfigError
 from brain_os_lib.db import BrainIndex, BrainIndexError, SCHEMA_VERSION
 from brain_os_lib.hashing import fingerprint_file
 from brain_os_lib.paths import BrainPaths
+from brain_os_lib.reconcile import list_events, reconcile_brain
 
 
 def infer_brain_root(script_path: Path) -> Path | None:
@@ -70,21 +72,35 @@ def cmd_init(config: BrainOSConfig) -> dict[str, Any]:
         "brain_root": str(config.brain_root),
         "state_dir": str(state_dir),
         "database": status,
-        "note": "Không scan, move, ingest hay sửa note trong Stage 2.",
+        "note": "Chỉ khởi tạo derived state. Không scan, move, ingest hay sửa note.",
     }
 
 
 def cmd_status(config: BrainOSConfig) -> dict[str, Any]:
     exists = config.db_path.is_file()
     database: dict[str, Any] = {"path": str(config.db_path), "initialized": False}
+    scan: dict[str, Any] = {}
     if exists:
         with BrainIndex(config.db_path) as index:
             database = {"initialized": True, **index.status()}
+            raw = index.get_meta("last_scan_report", "")
+            if raw:
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, dict):
+                        scan = parsed
+                except json.JSONDecodeError:
+                    scan = {}
+            scan["last_scan_at"] = index.get_meta("last_scan_at", "")
+            scan["last_full_reconcile_at"] = index.get_meta(
+                "last_full_reconcile_at", ""
+            )
     return {
         "ok": True,
         "action": "status",
         "config": config.summary(),
         "database": database,
+        "scan": scan,
     }
 
 
@@ -108,6 +124,7 @@ def cmd_doctor(config: BrainOSConfig) -> dict[str, Any]:
     except ValueError:
         state_inside = False
 
+    scan_cfg = config.core.get("scan") or {}
     checks = {
         "brain_root_exists": config.brain_root.is_dir(),
         "config_loaded": True,
@@ -117,12 +134,15 @@ def cmd_doctor(config: BrainOSConfig) -> dict[str, Any]:
         "sqlite_fts5": _check_fts5(),
         "schema_supported": SCHEMA_VERSION,
         "database_exists": config.db_path.is_file(),
+        "scan_follow_symlinks": bool(scan_cfg.get("follow_symlinks", False)),
+        "scan_extensions": list(scan_cfg.get("extensions") or [".md", ".markdown"]),
     }
 
     ok = bool(
         checks["brain_root_exists"]
         and checks["config_loaded"]
         and checks["state_path_inside_brain"]
+        and checks["scan_follow_symlinks"] is False
     )
     return {
         "ok": ok,
@@ -150,6 +170,45 @@ def cmd_fingerprint(config: BrainOSConfig, value: str) -> dict[str, Any]:
     }
 
 
+def cmd_scan(config: BrainOSConfig, *, full_hash: bool = False) -> dict[str, Any]:
+    report = reconcile_brain(config, full_hash=full_hash)
+    return {
+        "ok": report.ok,
+        "action": "reconcile" if full_hash else "scan",
+        "dry_run": config.dry_run,
+        "writes_user_files": False,
+        "derived_state_only": True,
+        "report": report.to_dict(),
+    }
+
+
+def cmd_events(
+    config: BrainOSConfig,
+    *,
+    limit: int = 50,
+    unhandled_only: bool = False,
+) -> dict[str, Any]:
+    if not config.db_path.is_file():
+        return {
+            "ok": True,
+            "action": "events",
+            "initialized": False,
+            "events": [],
+        }
+    with BrainIndex(config.db_path) as index:
+        events = list_events(
+            index,
+            limit=limit,
+            unhandled_only=unhandled_only,
+        )
+    return {
+        "ok": True,
+        "action": "events",
+        "initialized": True,
+        "events": events,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Brain OS V1 deterministic CLI")
     parser.add_argument("--brain-root", help="Override Brain/vault root.")
@@ -157,12 +216,31 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Create/open rebuildable Brain OS state DB.")
-    sub.add_parser("status", help="Show config and DB status without scanning.")
+    sub.add_parser("status", help="Show config, DB and latest scan status.")
     sub.add_parser("doctor", help="Read-only runtime/config checks.")
     sub.add_parser("config", help="Print normalized config summary.")
 
     fingerprint = sub.add_parser("fingerprint", help="Hash one file without writing it.")
     fingerprint.add_argument("path")
+
+    scan = sub.add_parser(
+        "scan",
+        help="Fast reconcile using size/mtime cache; writes only .javis derived state.",
+    )
+    scan.add_argument(
+        "--full-hash",
+        action="store_true",
+        help="Hash every eligible file instead of reusing unchanged fingerprints.",
+    )
+
+    sub.add_parser(
+        "reconcile",
+        help="Full-hash reconcile for sparse integrity checking.",
+    )
+
+    events = sub.add_parser("events", help="Show filesystem change journal.")
+    events.add_argument("--limit", type=int, default=50)
+    events.add_argument("--unhandled", action="store_true")
     return parser
 
 
@@ -184,6 +262,16 @@ def main() -> int:
             report = cmd_config(config)
         elif args.command == "fingerprint":
             report = cmd_fingerprint(config, args.path)
+        elif args.command == "scan":
+            report = cmd_scan(config, full_hash=bool(args.full_hash))
+        elif args.command == "reconcile":
+            report = cmd_scan(config, full_hash=True)
+        elif args.command == "events":
+            report = cmd_events(
+                config,
+                limit=args.limit,
+                unhandled_only=bool(args.unhandled),
+            )
         else:  # pragma: no cover
             parser.error(f"Unknown command: {args.command}")
             return 2
