@@ -99,6 +99,38 @@ class BrainOSConfig:
                     f"{core_path}: zone {zone!r} bắt buộc ingest: never"
                 )
 
+        scan = core.get("scan") or {}
+        if not isinstance(scan, dict):
+            raise BrainOSConfigError(f"{core_path}: scan phải là mapping")
+        extensions = scan.get("extensions") or [".md", ".markdown"]
+        if not isinstance(extensions, list) or not extensions:
+            raise BrainOSConfigError(f"{core_path}: scan.extensions phải là list không rỗng")
+        for ext in extensions:
+            value = str(ext or "").strip()
+            if not value.startswith(".") or "/" in value or "\\" in value:
+                raise BrainOSConfigError(
+                    f"{core_path}: scan extension không hợp lệ: {ext!r}"
+                )
+        if bool(scan.get("follow_symlinks", False)):
+            raise BrainOSConfigError(
+                f"{core_path}: Brain OS V1 bắt buộc scan.follow_symlinks: false"
+            )
+        try:
+            hash_retries = int(scan.get("hash_retries", 1))
+            max_snapshot = int(scan.get("max_snapshot_bytes", 2 * 1024 * 1024))
+        except (TypeError, ValueError) as exc:
+            raise BrainOSConfigError(
+                f"{core_path}: scan.hash_retries/max_snapshot_bytes phải là số nguyên"
+            ) from exc
+        if not (0 <= hash_retries <= 5):
+            raise BrainOSConfigError(f"{core_path}: scan.hash_retries phải trong 0..5")
+        if max_snapshot < 0:
+            raise BrainOSConfigError(f"{core_path}: scan.max_snapshot_bytes phải >= 0")
+        if scan.get("deletion_policy", "mark_missing") != "mark_missing":
+            raise BrainOSConfigError(
+                f"{core_path}: Brain OS V1 chỉ hỗ trợ scan.deletion_policy: mark_missing"
+            )
+
         return cls(
             brain_root=root,
             core=core,
@@ -143,6 +175,7 @@ class BrainOSConfig:
         return dict(value)
 
     def summary(self) -> dict[str, Any]:
+        scan = self.core.get("scan") or {}
         return {
             "schema_version": SCHEMA_VERSION,
             "brain_root": str(self.brain_root),
@@ -151,4 +184,12 @@ class BrainOSConfig:
             "database": str(self.db_path),
             "zones": sorted((self.core.get("zones") or {}).keys()),
             "ignore_paths": list(self.ignore_paths),
+            "scan": {
+                "extensions": list(scan.get("extensions") or [".md", ".markdown"]),
+                "ignore_hidden": bool(scan.get("ignore_hidden", True)),
+                "follow_symlinks": bool(scan.get("follow_symlinks", False)),
+                "hash_retries": int(scan.get("hash_retries", 1)),
+                "max_snapshot_bytes": int(scan.get("max_snapshot_bytes", 2 * 1024 * 1024)),
+                "deletion_policy": str(scan.get("deletion_policy", "mark_missing")),
+            },
         }
