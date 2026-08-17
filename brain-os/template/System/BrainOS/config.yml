@@ -11,6 +11,19 @@ watch:
   max_ai_jobs_per_cycle: 2
   sparse_reconcile_minutes: 60
 
+# Stage 3 scanner only observes Markdown and writes derived state under .javis/.
+# It never follows symlinks and never treats hidden/operational folders as knowledge.
+scan:
+  extensions:
+    - .md
+    - .markdown
+  ignore_hidden: true
+  follow_symlinks: false
+  hash_retries: 1
+  max_snapshot_bytes: 2097152
+  emit_unchanged_events: false
+  deletion_policy: mark_missing
+
 classification:
   auto_move_confidence: 0.80
   candidate_confidence: 0.55
