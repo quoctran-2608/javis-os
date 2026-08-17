@@ -129,13 +129,20 @@ zones:
     ingest: never
     wiki: never
 
+# Operational/capability areas are not user knowledge. Brain OS must never recurse into
+# itself, Javis loops, taxonomy files, agents or plugins while scanning the knowledge vault.
 ignore_paths:
   - .git
   - .obsidian
   - .javis
   - attachments
   - inbox
-  - Javis/loop-log
+  - skills
+  - agents
+  - workflows
+  - plugins
+  - System
+  - Javis
 
 manual_override:
   field: javis
