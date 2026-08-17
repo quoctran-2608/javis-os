@@ -35,6 +35,18 @@ classification:
   max_frontmatter_bytes: 65536
   default_when_uncertain: index
 
+# Stage 5 plans Folder Category + canonical hierarchical tags without applying
+# any move or frontmatter rewrite. Long Living Notes are probed only through a
+# bounded excerpt; exact originals/content remain untouched.
+taxonomy:
+  category_field: javis_category
+  fallback_category_field: category
+  tag_fields:
+    - tags
+    - tag
+  max_text_probe_bytes: 131072
+  ambiguity_margin: 2
+
 folders:
   max_depth: 3
   allow_auto_move: false
