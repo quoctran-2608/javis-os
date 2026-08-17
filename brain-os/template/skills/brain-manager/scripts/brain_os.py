@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Brain OS deterministic CLI.
 
-Stage 3 adds read-only filesystem observation and writes only derived state
-under `.javis/` (SQLite + incremental-diff snapshots). It still does not move,
-rename, annotate, classify with AI, ingest or create Wiki pages.
+Stage 4 adds deterministic document classification on top of Stage 3 filesystem
+observation. All commands in this file still avoid LLM calls. `scan`, `reconcile`
+and `classify` write only rebuildable derived state under `.javis/`; they never
+move, rename, annotate, ingest or Wiki-ize user notes.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from brain_os_lib.classifier import classify_brain, list_classifications
 from brain_os_lib.config import BrainOSConfig, BrainOSConfigError
 from brain_os_lib.db import BrainIndex, BrainIndexError, SCHEMA_VERSION
 from brain_os_lib.hashing import fingerprint_file
@@ -125,6 +127,7 @@ def cmd_doctor(config: BrainOSConfig) -> dict[str, Any]:
         state_inside = False
 
     scan_cfg = config.core.get("scan") or {}
+    classification_cfg = config.core.get("classification") or {}
     checks = {
         "brain_root_exists": config.brain_root.is_dir(),
         "config_loaded": True,
@@ -136,6 +139,12 @@ def cmd_doctor(config: BrainOSConfig) -> dict[str, Any]:
         "database_exists": config.db_path.is_file(),
         "scan_follow_symlinks": bool(scan_cfg.get("follow_symlinks", False)),
         "scan_extensions": list(scan_cfg.get("extensions") or [".md", ".markdown"]),
+        "classification_accept_confidence": float(
+            classification_cfg.get("accept_confidence", 0.80)
+        ),
+        "classification_candidate_confidence": float(
+            classification_cfg.get("candidate_confidence", 0.55)
+        ),
     }
 
     ok = bool(
@@ -179,6 +188,49 @@ def cmd_scan(config: BrainOSConfig, *, full_hash: bool = False) -> dict[str, Any
         "writes_user_files": False,
         "derived_state_only": True,
         "report": report.to_dict(),
+    }
+
+
+def cmd_classify(
+    config: BrainOSConfig,
+    *,
+    force: bool = False,
+    paths: list[str] | None = None,
+) -> dict[str, Any]:
+    report = classify_brain(
+        config,
+        force=force,
+        paths=set(paths or []),
+    )
+    return {
+        "ok": report.ok,
+        "action": "classify",
+        "initialized": report.initialized,
+        "dry_run": config.dry_run,
+        "writes_user_files": False,
+        "derived_state_only": True,
+        "uses_ai": False,
+        "report": report.to_dict(),
+    }
+
+
+def cmd_classifications(
+    config: BrainOSConfig,
+    *,
+    needs_ai_only: bool = False,
+    limit: int = 100,
+) -> dict[str, Any]:
+    rows = list_classifications(
+        config,
+        needs_ai_only=needs_ai_only,
+        limit=limit,
+    )
+    return {
+        "ok": True,
+        "action": "classifications",
+        "initialized": config.db_path.is_file(),
+        "read_only": True,
+        "classifications": rows,
     }
 
 
@@ -238,6 +290,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Full-hash reconcile for sparse integrity checking.",
     )
 
+    classify = sub.add_parser(
+        "classify",
+        help="Deterministically classify indexed files; no AI and no user-file writes.",
+    )
+    classify.add_argument(
+        "--force",
+        action="store_true",
+        help="Recompute even when path/hash/policy cache is still valid.",
+    )
+    classify.add_argument(
+        "--path",
+        action="append",
+        default=[],
+        help="Classify only this exact Brain-relative indexed path; repeatable.",
+    )
+
+    classifications = sub.add_parser(
+        "classifications",
+        help="Read persisted Stage 4 classification decisions.",
+    )
+    classifications.add_argument("--needs-ai", action="store_true")
+    classifications.add_argument("--limit", type=int, default=100)
+
     events = sub.add_parser("events", help="Show filesystem change journal.")
     events.add_argument("--limit", type=int, default=50)
     events.add_argument("--unhandled", action="store_true")
@@ -266,6 +341,18 @@ def main() -> int:
             report = cmd_scan(config, full_hash=bool(args.full_hash))
         elif args.command == "reconcile":
             report = cmd_scan(config, full_hash=True)
+        elif args.command == "classify":
+            report = cmd_classify(
+                config,
+                force=bool(args.force),
+                paths=list(args.path or []),
+            )
+        elif args.command == "classifications":
+            report = cmd_classifications(
+                config,
+                needs_ai_only=bool(args.needs_ai),
+                limit=args.limit,
+            )
         elif args.command == "events":
             report = cmd_events(
                 config,
