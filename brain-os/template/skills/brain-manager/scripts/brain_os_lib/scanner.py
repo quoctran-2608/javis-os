@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from collections import Counter
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .changes import FileObservation
 from .config import BrainOSConfig
 from .hashing import FileChangedDuringHash, fingerprint_file
-from .identity import read_javis_id
+from .identity import MARKDOWN_SUFFIXES, read_javis_id
 from .models import BrainFile, FileFingerprint, ProcessingState
 from .paths import BrainPaths, relative_to_brain
 
@@ -21,6 +22,7 @@ class ScanCollection:
     warnings: list[str] = field(default_factory=list)
     traversal_errors: list[str] = field(default_factory=list)
     uncertain_paths: set[str] = field(default_factory=set)
+    duplicate_javis_ids: set[str] = field(default_factory=set)
     skipped_ignored: int = 0
     skipped_hidden: int = 0
     skipped_symlink: int = 0
@@ -84,6 +86,26 @@ def _existing_fast_fingerprint(
             suffix=path.suffix.lower(),
         )
     return None
+
+
+def _neutralize_duplicate_javis_ids(result: ScanCollection) -> None:
+    counts = Counter(obs.javis_id for obs in result.observations if obs.javis_id)
+    duplicates = {value for value, count in counts.items() if count > 1}
+    if not duplicates:
+        return
+
+    result.duplicate_javis_ids.update(duplicates)
+    for value in sorted(duplicates):
+        paths = [obs.path for obs in result.observations if obs.javis_id == value]
+        result.warnings.append(
+            f"duplicate javis_id {value!r} trong cùng scan: {paths}; bỏ identity này và không đoán."
+        )
+
+    # Do not let iteration order decide which copied note owns a duplicated ID.
+    result.observations = [
+        replace(obs, javis_id="") if obs.javis_id in duplicates else obs
+        for obs in result.observations
+    ]
 
 
 def collect_files(
@@ -182,7 +204,7 @@ def collect_files(
                 st = fp.stat()
                 zone = paths.zone_for(rel)
                 javis_id = ""
-                if fp.suffix.lower() == ".md":
+                if fp.suffix.lower() in MARKDOWN_SUFFIXES:
                     try:
                         javis_id = read_javis_id(fp)
                     except Exception as exc:
@@ -207,4 +229,5 @@ def collect_files(
                 result.warnings.append(f"{rel}: {type(exc).__name__}: {exc}")
 
     result.observations.sort(key=lambda item: item.path.casefold())
+    _neutralize_duplicate_javis_ids(result)
     return result
