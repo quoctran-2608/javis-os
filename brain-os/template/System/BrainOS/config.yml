@@ -32,6 +32,7 @@ classification:
   auto_move_confidence: 0.80
   explicit_type_field: javis_type
   fallback_type_field: type
+  max_frontmatter_bytes: 65536
   default_when_uncertain: index
 
 folders:
