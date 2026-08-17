@@ -48,3 +48,16 @@ def test_capability_and_system_trees_are_excluded_from_brain_scan():
     ignored = set(config["ignore_paths"])
     required = {"skills", "agents", "workflows", "plugins", "System", "Javis", ".javis"}
     assert required <= ignored
+
+
+def test_stage3_scan_policy_is_fail_safe():
+    validator = _load_validator()
+    config = validator.load_yaml(TEMPLATE / "System/BrainOS/config.yml")
+    scan = config["scan"]
+    assert scan["extensions"] == [".md", ".markdown"]
+    assert scan["ignore_hidden"] is True
+    assert scan["follow_symlinks"] is False
+    assert scan["hash_retries"] >= 1
+    assert scan["max_snapshot_bytes"] > 0
+    assert scan["emit_unchanged_events"] is False
+    assert scan["deletion_policy"] == "mark_missing"
