@@ -24,9 +24,14 @@ scan:
   emit_unchanged_events: false
   deletion_policy: mark_missing
 
+# Stage 4 is deterministic-first. Strong signals are committed; weak filename/path
+# hints remain proposals and are marked NEEDS_AI instead of becoming facts.
 classification:
-  auto_move_confidence: 0.80
+  accept_confidence: 0.80
   candidate_confidence: 0.55
+  auto_move_confidence: 0.80
+  explicit_type_field: javis_type
+  fallback_type_field: type
   default_when_uncertain: index
 
 folders:
