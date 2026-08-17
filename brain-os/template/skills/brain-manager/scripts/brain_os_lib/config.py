@@ -145,9 +145,10 @@ class BrainOSConfig:
             accept_confidence = float(classification.get("accept_confidence", 0.80))
             candidate_confidence = float(classification.get("candidate_confidence", 0.55))
             auto_move_confidence = float(classification.get("auto_move_confidence", 0.80))
+            max_frontmatter_bytes = int(classification.get("max_frontmatter_bytes", 65536))
         except (TypeError, ValueError) as exc:
             raise BrainOSConfigError(
-                f"{core_path}: classification confidence phải là số"
+                f"{core_path}: classification thresholds/max_frontmatter_bytes không hợp lệ"
             ) from exc
         if not 0.0 <= candidate_confidence <= accept_confidence <= 1.0:
             raise BrainOSConfigError(
@@ -156,6 +157,10 @@ class BrainOSConfig:
         if not 0.0 <= auto_move_confidence <= 1.0:
             raise BrainOSConfigError(
                 f"{core_path}: classification.auto_move_confidence phải trong 0..1"
+            )
+        if not 1024 <= max_frontmatter_bytes <= 1024 * 1024:
+            raise BrainOSConfigError(
+                f"{core_path}: classification.max_frontmatter_bytes phải trong 1024..1048576"
             )
         _safe_field_name(
             classification.get("explicit_type_field", "javis_type"),
@@ -255,6 +260,7 @@ class BrainOSConfig:
                 "auto_move_confidence": float(classification.get("auto_move_confidence", 0.80)),
                 "explicit_type_field": str(classification.get("explicit_type_field", "javis_type")),
                 "fallback_type_field": str(classification.get("fallback_type_field", "type")),
+                "max_frontmatter_bytes": int(classification.get("max_frontmatter_bytes", 65536)),
                 "default_when_uncertain": str(classification.get("default_when_uncertain", "index")),
             },
             "manual_override": {
