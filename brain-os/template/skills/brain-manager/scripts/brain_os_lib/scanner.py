@@ -120,6 +120,11 @@ def collect_files(
         kept_dirs: list[str] = []
         for name in dirnames:
             child = current_dir / name
+            # Check symlinks before resolving relative paths. A symlink may point outside the Brain;
+            # skipping it directly avoids both accidental escape and a false traversal error.
+            if child.is_symlink() and not opts["follow_symlinks"]:
+                result.skipped_symlink += 1
+                continue
             try:
                 rel = relative_to_brain(root, child)
             except Exception as exc:
@@ -132,14 +137,14 @@ def collect_files(
             if opts["ignore_hidden"] and _is_hidden_rel(rel):
                 result.skipped_hidden += 1
                 continue
-            if child.is_symlink() and not opts["follow_symlinks"]:
-                result.skipped_symlink += 1
-                continue
             kept_dirs.append(name)
         dirnames[:] = kept_dirs
 
         for name in filenames:
             fp = current_dir / name
+            if fp.is_symlink():
+                result.skipped_symlink += 1
+                continue
             try:
                 rel = relative_to_brain(root, fp)
             except Exception as exc:
@@ -151,9 +156,6 @@ def collect_files(
                 continue
             if opts["ignore_hidden"] and _is_hidden_rel(rel):
                 result.skipped_hidden += 1
-                continue
-            if fp.is_symlink():
-                result.skipped_symlink += 1
                 continue
             if fp.suffix.lower() not in opts["extensions"]:
                 result.skipped_extension += 1
