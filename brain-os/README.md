@@ -1,21 +1,28 @@
 # Brain OS V1
 
-Brain OS là lớp mở rộng chạy trên Brain của Javis, không sửa core `server/` hoặc `dashboard/`.
+Brain OS là **governance + lifecycle layer** cho kho Markdown/Obsidian dùng cùng Javis OS. Brain OS không xây một Second Brain cạnh tranh với Javis và không sửa core `server/` hoặc `dashboard/`.
+
+Ranh giới sở hữu hiện tại:
+
+- **Brain OS:** Living Notes, stable identity, deterministic change detection, incremental diff, taxonomy, import/provenance/originals, ingestion policy & routing.
+- **Javis OS:** AI Engine, INGEST execution, Wiki, Memory, Knowledge Graph, Skills và Loops/Scheduler.
+
+Nguyên tắc triển khai V1: **boring, deterministic, recoverable và đáng tin trước; thông minh sau**.
 
 ## Quy ước thư mục trong repo
 
-`brain-os/template/` là **cây file mẫu để cài vào một Brain thật**. Nó không phải là một folder cần xuất hiện nguyên khối trong Obsidian/Javis Brain.
+`brain-os/template/` là cây file mẫu để cài vào một Brain thật. Nó không phải một folder cần xuất hiện nguyên khối trong Obsidian/Javis Brain.
 
-Ví dụ file trong repo:
+Ví dụ:
 
 ```text
-brain-os/template/skills/brain-manager/scripts/probe_runtime.py
+brain-os/template/skills/brain-manager/scripts/brain_os.py
 ```
 
-khi cài vào Brain sẽ trở thành:
+khi cài sẽ trở thành:
 
 ```text
-<Brain>/skills/brain-manager/scripts/probe_runtime.py
+<Brain>/skills/brain-manager/scripts/brain_os.py
 ```
 
 Tương tự:
@@ -24,40 +31,43 @@ Tương tự:
 brain-os/template/Javis/loops/brain-os-probe.md
 ```
 
-sẽ trở thành:
+trở thành:
 
 ```text
 <Brain>/Javis/loops/brain-os-probe.md
 ```
 
-Dấu `/` trong tài liệu chỉ là ký hiệu phân cách các thư mục lồng nhau; nó không nằm trong tên folder.
-
 ## Ranh giới an toàn
 
 - `brain-os/template/`: file sẽ được cài vào Brain.
 - `brain-os/tools/`: công cụ dev/validator/installer, không phải dữ liệu Brain.
-- `brain-os/tests/`: test của Brain OS.
-- Không đưa dữ liệu cá nhân thật vào repo code này.
+- `brain-os/tests/`: acceptance/regression tests của Brain OS.
+- Không đưa dữ liệu cá nhân thật vào repo.
 - Không sửa core Javis nếu Skill/Loop/Script trong Brain giải quyết được.
+- Không dùng AI cho việc có thể quyết định chắc chắn bằng rule/hash/state.
+- Không auto-create folder/tag tùy ý.
+- Không tự Wiki hóa hoặc Memory hóa dữ liệu ở các chặng hiện tại.
 
-Các cây capability/vận hành như `skills/`, `agents/`, `workflows/`, `plugins/`, `System/`, `Javis/` và `.javis/` được Brain OS loại khỏi knowledge scan để tránh tự index/tự kích hoạt chính nó.
+Các cây capability/vận hành như `skills/`, `agents/`, `workflows/`, `plugins/`, `System/`, `Javis/` và `.javis/` được loại khỏi knowledge scan để Brain OS không tự index/tự kích hoạt chính nó.
 
 ## Trạng thái hiện tại
 
-### Chặng 0 - Runtime probe: hoàn tất
+### Gate 0 — Runtime Probe: hoàn tất
 
 - `probe_runtime.py`
-- loop probe mặc định `enabled: false`
+- kiểm Python, Brain root, quyền ghi, SQLite/FTS5, PyYAML, UTF-8 filename, SHA-256, atomic rename và path resolution;
+- loop probe mặc định `enabled: false`.
 
-### Chặng 1 - Foundation: hoàn tất
+### Gate 1 — Config + Policy: hoàn tất
 
-- config fail-safe
-- folder taxonomy
-- tag taxonomy + aliases
-- policy documents
-- foundation validator
+- config fail-safe;
+- folder taxonomy;
+- canonical tag taxonomy + aliases;
+- metadata/folder/tag/ingest policy;
+- foundation validator;
+- `dry_run: true`, auto-move/auto-create mặc định tắt.
 
-### Chặng 2 - Deterministic core: hoàn tất
+### Gate 2 — Deterministic Core + SQLite: hoàn tất
 
 Core nền:
 
@@ -75,7 +85,9 @@ skills/brain-manager/scripts/
     └── identity.py
 ```
 
-### Chặng 3 - Scanner + Change Detection: hoàn tất
+SQLite dưới `.javis/brain-index.db` là **derived/rebuildable state**, không phải source of truth. Markdown/file gốc vẫn là dữ liệu có thẩm quyền.
+
+### Gate 3 — Scanner + Change Detection: hoàn tất
 
 Bổ sung:
 
@@ -87,28 +99,22 @@ brain_os_lib/
 └── reconcile.py
 ```
 
-Chặng 3 cho Brain OS có khả năng **quan sát** vault nhưng vẫn chưa cho phép AI hoặc automation thay đổi note.
-
-Scanner hiện làm được:
+Scanner:
 
 - quét `.md` và `.markdown`;
-- bỏ qua `.javis`, `.obsidian`, `skills`, `agents`, `workflows`, `plugins`, `System`, `Javis`, cache/attachments;
+- bỏ qua capability/system/cache/attachments theo policy;
 - không follow symlink;
-- dùng SHA-256 và chống file bị Obsidian sửa giữa lúc hash;
-- scan nhanh reuse hash nếu size + mtime chưa đổi;
-- `reconcile` full-hash để kiểm tra toàn vẹn định kỳ;
+- dùng SHA-256, không dùng mtime một mình để kết luận content changed;
+- reuse hash khi stat không đổi và có `reconcile` full-hash để kiểm tra toàn vẹn;
 - phát hiện `CREATED`, `MODIFIED`, `RENAMED`, `MOVED`, `DELETED`;
-- rename/move chỉ match khi có bằng chứng duy nhất theo thứ tự `javis_id → inode/device → exact content hash`;
-- nếu match mơ hồ thì không đoán;
-- duplicate `javis_id` trong cùng một scan bị vô hiệu hóa cho identity matching để không file nào “chiếm” ID theo thứ tự duyệt;
-- delete chỉ chuyển state thành `MISSING`, không xóa dữ liệu hoặc Wiki;
-- nếu traversal có lỗi thì suppress toàn bộ deletion detection của vòng đó;
-- lưu change journal trong SQLite;
-- lưu snapshot text phái sinh dưới `.javis/snapshots/` để tạo incremental line diff;
-- snapshot mặc định tối đa 2 MiB/file và có thể xóa/rebuild mà không mất source of truth;
-- scanner không tự thêm `javis_id` vào note: ID mới ở Chặng 3 chỉ được giữ trong DB nếu note chưa có ID.
+- identity matching theo bằng chứng duy nhất, ưu tiên `javis_id` rồi inode/device rồi exact hash;
+- ambiguity hoặc duplicate identity thì không đoán;
+- delete chỉ chuyển `MISSING`, không xóa source/Wiki;
+- lỗi traversal làm suppress deletion detection của vòng scan đó;
+- lưu incremental text snapshots dưới `.javis/snapshots/`;
+- không rewrite note người dùng.
 
-### Chặng 4 - Document Type Classifier: hoàn tất
+### Gate 4 — Document Type Classifier: hoàn tất
 
 Bổ sung:
 
@@ -117,9 +123,7 @@ brain_os_lib/
 └── classifier.py
 ```
 
-Classifier Chặng 4 **không gọi AI**. Nó áp dụng deterministic signals trước và lưu quyết định vào derived SQLite state.
-
-Các loại tài liệu hiện có:
+Document types:
 
 ```text
 living_note
@@ -136,22 +140,99 @@ binary_source
 unknown
 ```
 
-Nguyên tắc quan trọng:
+Classifier không gọi AI. Precedence deterministic gồm zone, explicit frontmatter, path/filename và các signal đã định nghĩa. Tín hiệu yếu chỉ tạo proposal/`needs_ai`; nó không được commit speculative type.
 
-- `Document Type` mô tả **vòng đời/ý nghĩa của tài liệu**, không đồng nghĩa với `ingest`, `wiki`, `move` hoặc bất kỳ hành động nào.
-- tín hiệu mạnh như zone đã cấu hình hoặc `javis_type` hợp lệ có thể được deterministic classifier chấp nhận;
-- tín hiệu yếu như tên file `2026-08-17.md` ngoài zone chỉ tạo `proposed_type: daily` + `needs_ai: true`; DB vẫn giữ `document_type: unknown`;
-- `javis_type` là override type chuyên dụng; field `type` chỉ là fallback khi giá trị đúng một Brain OS type đã biết;
-- processing override `javis: ignore|index|ingest|wiki|auto` được ghi nhận riêng, không bị trộn với document type;
-- `javis: index` hoặc `javis: ignore` có thể tránh AI classification vì người dùng đã chỉ rõ route an toàn, nhưng classifier vẫn không bịa document type;
-- classifier đọc frontmatter theo bounded probe, mặc định tối đa 64 KiB; nó không đọc cả Living Note dài chỉ để lấy YAML đầu file;
-- malformed/oversized frontmatter không làm chết cả batch: classifier ghi warning rồi fallback sang tín hiệu zone/path;
-- cache classification dựa trên `classifier_version + policy_id + content_hash + path`, nên rename/move, sửa nội dung hoặc đổi policy sẽ tự làm cache stale;
-- move Living Note từ `Notes/` sang `sources/` có thể được reclassify từ `living_note` sang `reference_source` mà vẫn giữ `source_id` của Chặng 3;
-- `MISSING` record không được classifier đụng vào;
-- mọi classification metadata đều nằm trong `.javis/brain-index.db`, không được ghi ngược vào note.
+`javis: auto|ignore|index|ingest|wiki` là processing override riêng, không bị trộn với semantic document type.
 
-CLI hiện hỗ trợ:
+### Gate 5 — Folder Category + Tag Taxonomy: hoàn tất
+
+Bổ sung chính:
+
+```text
+brain_os_lib/
+├── taxonomy.py
+└── metadata.py
+```
+
+Gate 5 chỉ **plan taxonomy**, chưa move note thật. Các invariant chính:
+
+- một primary folder/category, nhiều canonical tags;
+- chỉ chọn category đã đăng ký trong `System/Taxonomy/folders.yml`;
+- tag alias được normalize về canonical tag;
+- không auto-create folder/tag;
+- không folder/tag explosion;
+- Living Note không bị move tùy tiện theo một keyword mới xuất hiện;
+- ambiguous decision giữ ở candidate/unresolved thay vì đoán;
+- output có thể báo `would_move_to` nhưng không mutate source/frontmatter.
+
+### Gate 6 — Living Note + Markdown Import: hoàn tất khi Gate 0–6 xanh
+
+Bổ sung:
+
+```text
+brain_os_lib/
+├── originals.py
+└── importer.py
+```
+
+và CLI:
+
+```bash
+python skills/brain-manager/scripts/brain_os.py import <file.md>
+```
+
+Import V1 có hai chế độ:
+
+```bash
+# Preview an toàn — mặc định không ghi gì
+python skills/brain-manager/scripts/brain_os.py import "/path/note.md"
+
+# Ghi immutable snapshot + editable working copy
+python skills/brain-manager/scripts/brain_os.py import "/path/note.md" --apply
+```
+
+Có thể chỉ định deterministic type/category đã tồn tại:
+
+```bash
+python skills/brain-manager/scripts/brain_os.py import "/path/note.md" \
+  --type living_note \
+  --category notes_personal_learning \
+  --apply
+```
+
+Stage 6 **không** gọi Javis INGEST, không ghi Wiki, không ghi Memory và không gọi AI.
+
+Cơ chế provenance:
+
+```text
+external/original Markdown
+        │
+        ├── byte-for-byte snapshot
+        │   .javis/originals/imports/<javis_id>/original.md
+        │
+        ├── manifest provenance
+        │   .javis/originals/imports/<javis_id>/manifest.json
+        │
+        └── editable working note
+            Notes/... hoặc sources/...
+```
+
+Invariant Gate 6:
+
+- source bên ngoài không bị sửa;
+- `original.md` phải có SHA-256 đúng bằng source lúc import;
+- snapshot được kiểm hash trước khi reuse; tamper thì fail closed;
+- Living Note có stable `javis_id` trong working frontmatter;
+- working note sửa độc lập mà không làm đổi immutable snapshot;
+- rename/move working note vẫn giữ identity qua scanner;
+- exact re-import không tạo duplicate và không overwrite edit của người dùng;
+- nếu working copy mất nhưng snapshot còn, re-import phải dùng lại đúng identity/provenance cũ;
+- cùng exact source bytes dưới tên external file khác không được fork thành identity thứ hai;
+- reference source mặc định về `sources/_Unsorted/` nếu chưa có category đủ chắc chắn;
+- chỉ category đã đăng ký mới được dùng; category bịa phải bị từ chối;
+- technical hashes/state vẫn ở `.javis`, không nhồi vào frontmatter người dùng.
+
+## CLI hiện có
 
 ```bash
 python skills/brain-manager/scripts/brain_os.py doctor
@@ -166,12 +247,16 @@ python skills/brain-manager/scripts/brain_os.py classify
 python skills/brain-manager/scripts/brain_os.py classify --path "Notes/example.md"
 python skills/brain-manager/scripts/brain_os.py classify --force
 python skills/brain-manager/scripts/brain_os.py classifications --needs-ai --limit 50
+python skills/brain-manager/scripts/brain_os.py taxonomy
+python skills/brain-manager/scripts/brain_os.py taxonomy-plans --limit 50
+python skills/brain-manager/scripts/brain_os.py import "/path/file.md"
+python skills/brain-manager/scripts/brain_os.py import "/path/file.md" --apply
 python skills/brain-manager/scripts/brain_os.py events --limit 50
 ```
 
-`status`, `doctor`, `config`, `fingerprint`, `classifications` và `events` là read-only. `init`, `scan`, `reconcile`, `classify` chỉ ghi **derived state** trong `.javis/`; chúng không move, rename, rewrite, ingest hoặc Wiki hóa note người dùng.
+`status`, `doctor`, `config`, `fingerprint`, `classifications`, `taxonomy-plans` và `events` là read-only. `scan`, `reconcile`, `classify`, `taxonomy` chỉ ghi derived state. `import` mặc định preview; chỉ `import --apply` được phép tạo immutable snapshot + working note của file đang được nhập.
 
-## Gate kiểm thử
+## Gate kiểm thử 0–6
 
 Từ root repo:
 
@@ -182,50 +267,26 @@ pytest -q \
   brain-os/tests/test_core_stage2.py \
   brain-os/tests/test_stage3_scanner.py \
   brain-os/tests/test_stage3_identity_edges.py \
-  brain-os/tests/test_stage4_classifier.py
+  brain-os/tests/test_stage4_classifier.py \
+  brain-os/tests/test_stage5_taxonomy.py \
+  brain-os/tests/test_stage6_importer.py \
+  brain-os/tests/test_stage6_cli.py \
+  brain-os/tests/test_stage6_reimport_edges.py
 ```
 
-Các invariant Chặng 3 bắt buộc phải giữ:
+Gate chỉ được đóng khi **toàn bộ** test của các chặng trước và chặng hiện tại cùng xanh. Không dùng skip/xfail/ignore hoặc hạ assertion để tạo green giả.
 
-- first scan chỉ nhận file Markdown hợp lệ;
-- scan thứ hai không sinh event `UNCHANGED` rác;
-- sửa Living Note sinh incremental diff mà không rewrite note;
-- rename giữ nguyên `source_id`;
-- move + edit chỉ được nhận là cùng file khi có bằng chứng đủ mạnh;
-- hash trùng nhiều file không được đoán rename;
-- duplicate `javis_id` không được quyết định bằng thứ tự duyệt file;
-- `.markdown` dùng cùng stable identity logic như `.md`;
-- delete → `MISSING`, không xóa record/snapshot;
-- restore giữ identity;
-- `javis_id` trong frontmatter có ưu tiên cao nhất khi identity đó là duy nhất;
-- lỗi traversal phải suppress delete;
-- CLI scan phải báo `writes_user_files: false` và chỉ tạo state dưới `.javis/`.
+## Những gì V1 ở Gate 6 vẫn cố ý chưa làm
 
-Các invariant Chặng 4:
+- chưa Amplenote migration adapter — đó là Gate 7;
+- chưa AI Brain Manager/policy fallback — Gate 8;
+- chưa Brain Watch automation — Gate 9; scheduler sẽ thuộc Javis Loop;
+- chưa PDF/DOCX/Sheets import — Gate 10;
+- chưa gọi Javis INGEST trong importer;
+- chưa tự tạo Wiki/Memory;
+- chưa semantic reorganization toàn vault;
+- chưa vector DB/embeddings;
+- chưa auto-create category/tag;
+- chưa realtime filesystem daemon riêng.
 
-- zone chuẩn được deterministic classify với confidence cao;
-- `javis_type` hợp lệ có provenance và có thể override zone;
-- field `type` lạ như `meeting` không bị Brain OS chiếm nghĩa;
-- tín hiệu tên file yếu chỉ là proposal, không được commit speculative type;
-- unknown + `javis: index` không cần AI nhưng vẫn giữ type `unknown`;
-- malformed hoặc oversized frontmatter không làm chết batch;
-- frontmatter probe bị chặn trong 1 KiB..1 MiB, mặc định 64 KiB;
-- classification cache invalid khi hash/path/policy thay đổi;
-- move qua zone phải reclassify đúng nhưng giữ stable identity;
-- missing record không reclassify;
-- CLI `classify` phải báo `uses_ai: false`, `writes_user_files: false`;
-- pure classifier không mutate file người dùng.
-
-## Những gì Chặng 4 vẫn cố ý CHƯA làm
-
-- chưa gọi AI cho các record `needs_ai`;
-- chưa quyết định giá trị/durability của từng đoạn Living Note;
-- chưa Folder Category Manager apply thật;
-- chưa Tag Taxonomy apply thật;
-- chưa auto move;
-- chưa auto create category/tag;
-- chưa ingest;
-- chưa Memory/Wiki candidate;
-- chưa Brain Watch loop tự động.
-
-Mặc định `System/BrainOS/config.yml` vẫn để `dry_run: true`, tắt auto-move và auto-create taxonomy cho tới khi các gate kiểm thử ở những chặng sau đạt.
+Mặc định `System/BrainOS/config.yml` vẫn giữ `dry_run: true`, tắt auto-move và auto-create taxonomy. Quyền ghi ở Gate 6 chỉ mở theo hành động import explicit `--apply`, trên đúng file người dùng yêu cầu nhập.
