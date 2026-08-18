@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Brain OS deterministic CLI.
 
-Stage 5 adds a deterministic, dry-run taxonomy planner on top of Stage 4 document
-classification. All commands here still avoid LLM calls. `scan`, `reconcile`,
-`classify` and `taxonomy` write only rebuildable derived state under `.javis/`;
-they never move, rename, annotate, ingest or Wiki-ize user notes.
+Stage 6 adds safe Markdown import + immutable provenance on top of the
+Stage 0-5 deterministic scanner/classifier/taxonomy foundation. Brain OS still
+contains no LLM calls and does not execute Javis INGEST, Wiki, or Memory writes.
 """
 
 from __future__ import annotations
@@ -19,6 +18,8 @@ from brain_os_lib.classifier import classify_brain, list_classifications
 from brain_os_lib.config import BrainOSConfig, BrainOSConfigError
 from brain_os_lib.db import BrainIndex, BrainIndexError, SCHEMA_VERSION
 from brain_os_lib.hashing import fingerprint_file
+from brain_os_lib.importer import MarkdownImportError, import_markdown
+from brain_os_lib.originals import OriginalsError
 from brain_os_lib.paths import BrainPaths
 from brain_os_lib.reconcile import list_events, reconcile_brain
 from brain_os_lib.taxonomy import (
@@ -322,6 +323,33 @@ def cmd_taxonomy_plans(
     }
 
 
+def cmd_import(
+    config: BrainOSConfig,
+    source: str,
+    *,
+    document_type: str = "",
+    category_id: str = "",
+    apply: bool = False,
+) -> dict[str, Any]:
+    result = import_markdown(
+        config,
+        source,
+        document_type=document_type or None,
+        category_id=category_id,
+        dry_run=not apply,
+    )
+    return {
+        "ok": result.ok,
+        "action": "import",
+        "dry_run": result.dry_run,
+        "uses_ai": False,
+        "executes_javis_ingest": False,
+        "writes_wiki": False,
+        "writes_memory": False,
+        "result": result.to_dict(),
+    }
+
+
 def cmd_events(
     config: BrainOSConfig,
     *,
@@ -428,6 +456,31 @@ def build_parser() -> argparse.ArgumentParser:
     taxonomy_plans.add_argument("--unresolved", action="store_true")
     taxonomy_plans.add_argument("--limit", type=int, default=100)
 
+    import_cmd = sub.add_parser(
+        "import",
+        help=(
+            "Preview or apply one Markdown import with immutable provenance; "
+            "does not execute Javis INGEST/Wiki/Memory."
+        ),
+    )
+    import_cmd.add_argument("path", help="Markdown source path; may be outside the Brain.")
+    import_cmd.add_argument(
+        "--type",
+        choices=("living_note", "reference_source"),
+        default="",
+        help="Optional deterministic import type override.",
+    )
+    import_cmd.add_argument(
+        "--category",
+        default="",
+        help="Optional existing taxonomy category id/alias; never auto-creates one.",
+    )
+    import_cmd.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write immutable snapshot + editable working copy. Default is preview only.",
+    )
+
     events = sub.add_parser("events", help="Show filesystem change journal.")
     events.add_argument("--limit", type=int, default=50)
     events.add_argument("--unhandled", action="store_true")
@@ -481,6 +534,14 @@ def main() -> int:
                 unresolved_only=bool(args.unresolved),
                 limit=args.limit,
             )
+        elif args.command == "import":
+            report = cmd_import(
+                config,
+                args.path,
+                document_type=str(args.type or ""),
+                category_id=str(args.category or ""),
+                apply=bool(args.apply),
+            )
         elif args.command == "events":
             report = cmd_events(
                 config,
@@ -496,6 +557,8 @@ def main() -> int:
     except (
         BrainOSConfigError,
         BrainIndexError,
+        MarkdownImportError,
+        OriginalsError,
         TaxonomyError,
         OSError,
         ValueError,
