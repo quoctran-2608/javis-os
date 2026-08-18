@@ -83,4 +83,5 @@ jobs:
             brain-os/tests/test_stage3_identity_edges.py \
             brain-os/tests/test_stage4_classifier.py \
             brain-os/tests/test_stage5_taxonomy.py \
-            brain-os/tests/test_stage6_importer.py
+            brain-os/tests/test_stage6_importer.py \
+            brain-os/tests/test_stage6_cli.py
