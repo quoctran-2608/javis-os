@@ -51,7 +51,8 @@ jobs:
         run: |
           status=0
           for f in tests/js/test_*.js tests/js/test_*.mjs; do
-            echo "==== $(basename "$f") ===="n            node "$f" || status=1
+            echo "==== $(basename "$f") ===="
+            node "$f" || status=1
           done
           exit $status
 
