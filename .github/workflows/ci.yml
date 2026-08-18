@@ -57,7 +57,8 @@ jobs:
           exit $status
 
       # KHÔNG còn `cd server`: từ 0.9.242 test tự nạp đường dẫn qua tests/python/_paths.py
-      # nên chạy được từ bất kỳ thư mục làm việc nào.
+      # nên chạy được từ bất kỳ thư mục làm việc nào. Trước đây chạy sai chỗ là hàng loạt
+      # test đỏ vì `import main` không thấy module, hoặc lặng lẽ đọc nhầm file.
       - name: Chạy test Python (auth/secret/MCP-perm/traversal/CSRF + plugin)
         env:
           PYTHONIOENCODING: utf-8
