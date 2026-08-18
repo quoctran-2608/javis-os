@@ -11,6 +11,8 @@ watch:
   max_ai_jobs_per_cycle: 2
   sparse_reconcile_minutes: 60
 
+# Stage 3 scanner only observes Markdown and writes derived state under .javis/.
+# It never follows symlinks and never treats hidden/operational folders as knowledge.
 scan:
   extensions:
     - .md
@@ -22,6 +24,8 @@ scan:
   emit_unchanged_events: false
   deletion_policy: mark_missing
 
+# Stage 4 is deterministic-first. Strong signals are committed; weak filename/path
+# hints remain proposals and are marked NEEDS_AI instead of becoming facts.
 classification:
   accept_confidence: 0.80
   candidate_confidence: 0.55
@@ -31,6 +35,9 @@ classification:
   max_frontmatter_bytes: 65536
   default_when_uncertain: index
 
+# Stage 5 plans Folder Category + canonical hierarchical tags without applying
+# any move or frontmatter rewrite. Long Living Notes are probed only through a
+# bounded excerpt; exact originals/content remain untouched.
 taxonomy:
   category_field: javis_category
   fallback_category_field: category
@@ -46,12 +53,14 @@ folders:
   allow_auto_create: false
   unsorted_name: _Unsorted
 
+# Tags describe multiple dimensions. Folder category remains the single primary home.
 tags:
   max_per_note: 6
   max_depth: 3
   allow_auto_create: false
   preserve_legacy_tags: true
 
+# Markdown/file content remains source of truth. SQLite is derived and rebuildable.
 index:
   database: .javis/brain-index.db
   use_fts5_if_available: true
@@ -62,6 +71,8 @@ originals:
   snapshot_root: .javis/originals
   hash_algorithm: sha256
 
+# Stage 10 document normalization is fail-closed and bounded. PDF uses the
+# Brain OS document dependency file; DOCX/XLSX/CSV/TSV use deterministic parsers.
 documents:
   max_file_bytes: 268435456
   max_normalized_bytes: 20971520
@@ -94,18 +105,74 @@ paths:
   state: .javis
 
 zones:
-  "00 - Dashboard": {discover: true, index: false, ingest: never, wiki: never}
-  "01 - Daily Log": {discover: true, index: true, ingest: selective, wiki: never_by_default}
-  "02 - Weekly Log": {discover: true, index: true, ingest: selective, wiki: candidate_only}
-  "03 - Monthly Log": {discover: true, index: true, ingest: selective, wiki: candidate_only}
-  "04 - Future Log": {discover: true, index: true, ingest: never, wiki: never_by_default}
-  Notes: {discover: true, index: true, ingest: auto_selective, wiki: selective}
-  sources: {discover: true, index: true, ingest: auto, wiki: selective}
-  Library: {discover: true, index: metadata_only, ingest: via_normalized_source, wiki: never_directly}
-  wiki: {discover: true, index: true, ingest: never, wiki: derived}
-  memory: {discover: true, index: true, ingest: memory_pipeline, wiki: never_by_default}
-  .javis: {discover: false, index: false, ingest: never, wiki: never}
+  "00 - Dashboard":
+    discover: true
+    index: false
+    ingest: never
+    wiki: never
 
+  "01 - Daily Log":
+    discover: true
+    index: true
+    ingest: selective
+    wiki: never_by_default
+
+  "02 - Weekly Log":
+    discover: true
+    index: true
+    ingest: selective
+    wiki: candidate_only
+
+  "03 - Monthly Log":
+    discover: true
+    index: true
+    ingest: selective
+    wiki: candidate_only
+
+  "04 - Future Log":
+    discover: true
+    index: true
+    ingest: never
+    wiki: never_by_default
+
+  Notes:
+    discover: true
+    index: true
+    ingest: auto_selective
+    wiki: selective
+
+  sources:
+    discover: true
+    index: true
+    ingest: auto
+    wiki: selective
+
+  Library:
+    discover: true
+    index: metadata_only
+    ingest: via_normalized_source
+    wiki: never_directly
+
+  wiki:
+    discover: true
+    index: true
+    ingest: never
+    wiki: derived
+
+  memory:
+    discover: true
+    index: true
+    ingest: memory_pipeline
+    wiki: never_by_default
+
+  .javis:
+    discover: false
+    index: false
+    ingest: never
+    wiki: never
+
+# Operational/capability areas are not user knowledge. Brain OS must never recurse into
+# itself, Javis loops, taxonomy files, agents or plugins while scanning the knowledge vault.
 ignore_paths:
   - .git
   - .obsidian
