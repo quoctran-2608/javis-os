@@ -76,6 +76,16 @@ def _type_from_text(value: Any) -> DocumentType | None:
     return aliases.get(token)
 
 
+def _scope_for(document_type: DocumentType) -> str:
+    if document_type == DocumentType.LIVING_NOTE:
+        return "living_notes"
+    if document_type == DocumentType.REFERENCE_SOURCE:
+        return "knowledge"
+    raise MarkdownImportError(
+        f"Stage 6 không hỗ trợ document type {document_type.value!r}."
+    )
+
+
 def _matching_category_from_tags(
     registry: TaxonomyRegistry,
     scope: str,
@@ -87,12 +97,16 @@ def _matching_category_from_tags(
         if not canonical:
             continue
         for category in registry.categories_by_scope.get(scope, []):
-            if canonical == category.slug_path or canonical.startswith(category.slug_path + "/"):
+            if canonical == category.slug_path or canonical.startswith(
+                category.slug_path + "/"
+            ):
                 matches[category.id] = category
     if not matches:
         return None
     deepest = max(category.depth for category in matches.values())
-    finalists = [category for category in matches.values() if category.depth == deepest]
+    finalists = [
+        category for category in matches.values() if category.depth == deepest
+    ]
     if len(finalists) != 1:
         return None
     return finalists[0]
@@ -105,8 +119,15 @@ def _detect_type(
     explicit: DocumentType | str | None,
 ) -> DocumentType:
     if explicit is not None:
-        doc_type = explicit if isinstance(explicit, DocumentType) else _type_from_text(explicit)
-        if doc_type not in {DocumentType.LIVING_NOTE, DocumentType.REFERENCE_SOURCE}:
+        doc_type = (
+            explicit
+            if isinstance(explicit, DocumentType)
+            else _type_from_text(explicit)
+        )
+        if doc_type not in {
+            DocumentType.LIVING_NOTE,
+            DocumentType.REFERENCE_SOURCE,
+        }:
             raise MarkdownImportError(
                 "Stage 6 Markdown import chỉ nhận living_note hoặc reference_source."
             )
@@ -115,7 +136,10 @@ def _detect_type(
     for field in ("javis_type", "type"):
         if field in metadata:
             parsed = _type_from_text(metadata.get(field))
-            if parsed in {DocumentType.LIVING_NOTE, DocumentType.REFERENCE_SOURCE}:
+            if parsed in {
+                DocumentType.LIVING_NOTE,
+                DocumentType.REFERENCE_SOURCE,
+            }:
                 return parsed
 
     if registry.resolve_category("living_notes", source.stem) is not None:
@@ -137,7 +161,7 @@ def _select_category(
     metadata: dict[str, Any],
     explicit_category_id: str = "",
 ):
-    scope = "living_notes" if document_type == DocumentType.LIVING_NOTE else "knowledge"
+    scope = _scope_for(document_type)
 
     requested = str(explicit_category_id or "").strip()
     if not requested:
@@ -155,7 +179,9 @@ def _select_category(
     if by_title is not None:
         return scope, by_title
 
-    by_tag = _matching_category_from_tags(registry, scope, _metadata_tags(metadata))
+    by_tag = _matching_category_from_tags(
+        registry, scope, _metadata_tags(metadata)
+    )
     if by_tag is not None:
         return scope, by_tag
 
@@ -221,6 +247,52 @@ def _existing_working_path(
         if candidate.is_file():
             return snapshot.working_path
     return ""
+
+
+def _snapshot_plan(
+    registry: TaxonomyRegistry,
+    snapshot: OriginalSnapshot,
+    source: Path,
+) -> tuple[DocumentType, str, Any, str]:
+    """Rebuild a missing working copy from immutable provenance.
+
+    Exact source bytes identify one prior import. A missing editable copy must
+    therefore reuse the snapshot's stable identity/type/category instead of
+    generating a second identity for the same source.
+    """
+
+    document_type = _type_from_text(snapshot.document_type)
+    if document_type not in {
+        DocumentType.LIVING_NOTE,
+        DocumentType.REFERENCE_SOURCE,
+    }:
+        raise MarkdownImportError(
+            f"Snapshot {snapshot.source_id} có document_type không hợp lệ: "
+            f"{snapshot.document_type!r}"
+        )
+
+    scope = _scope_for(document_type)
+    category = None
+    category_id = str(snapshot.category_id or "").strip()
+    if category_id:
+        category = registry.resolve_category(scope, category_id)
+        if category is None:
+            raise MarkdownImportError(
+                f"Snapshot {snapshot.source_id} tham chiếu category không còn tồn tại: "
+                f"{category_id!r}"
+            )
+
+    if snapshot.working_path:
+        rel_path = snapshot.working_path
+        safe_join(registry.config.brain_root, rel_path)
+    else:
+        rel_path = _destination_rel(
+            registry,
+            scope=scope,
+            category=category,
+            filename=source.name,
+        )
+    return document_type, scope, category, rel_path
 
 
 def _avoid_collision(
@@ -297,7 +369,9 @@ def import_markdown(
         source_bytes.decode("utf-8")
         document = load_markdown(source)
     except (OSError, UnicodeDecodeError, FrontmatterError) as exc:
-        raise MarkdownImportError(f"Markdown nguồn không hợp lệ: {source}: {exc}") from exc
+        raise MarkdownImportError(
+            f"Markdown nguồn không hợp lệ: {source}: {exc}"
+        ) from exc
 
     source_hash = sha256_bytes(source_bytes)
     effective_dry_run = config.dry_run if dry_run is None else bool(dry_run)
@@ -323,32 +397,47 @@ def import_markdown(
                 indexed=bool(config.db_path.is_file()),
             )
 
-    resolved_type = _detect_type(registry, source, document.metadata, document_type)
-    scope, category = _select_category(
-        registry,
-        document_type=resolved_type,
-        source=source,
-        metadata=document.metadata,
-        explicit_category_id=category_id,
-    )
-    resolved_category = category.id if category is not None else ""
+        resolved_type, scope, category, rel_path = _snapshot_plan(
+            registry, existing_snapshot, source
+        )
+        resolved_category = category.id if category is not None else ""
+        source_id = existing_snapshot.source_id
+    else:
+        resolved_type = _detect_type(
+            registry, source, document.metadata, document_type
+        )
+        scope, category = _select_category(
+            registry,
+            document_type=resolved_type,
+            source=source,
+            metadata=document.metadata,
+            explicit_category_id=category_id,
+        )
+        resolved_category = category.id if category is not None else ""
 
-    existing_id = str(document.metadata.get("javis_id") or "").strip()
-    source_id = (
-        existing_id
-        if valid_existing_id(existing_id)
-        else new_source_id(resolved_type)
-    )
+        existing_id = str(document.metadata.get("javis_id") or "").strip()
+        source_id = (
+            existing_id
+            if valid_existing_id(existing_id)
+            else new_source_id(resolved_type)
+        )
 
-    rel_path = _destination_rel(
-        registry,
-        scope=scope,
-        category=category,
-        filename=source.name,
-    )
+        rel_path = _destination_rel(
+            registry,
+            scope=scope,
+            category=category,
+            filename=source.name,
+        )
+
     rel_path = _avoid_collision(config, rel_path, source_id)
 
     if effective_dry_run:
+        if existing_snapshot is not None:
+            snapshot_path = existing_snapshot.snapshot_path
+            manifest_path = existing_snapshot.manifest_path
+        else:
+            snapshot_path = f".javis/originals/imports/{source_id}/original.md"
+            manifest_path = f".javis/originals/imports/{source_id}/manifest.json"
         return ImportResult(
             ok=True,
             dry_run=True,
@@ -357,8 +446,8 @@ def import_markdown(
             document_type=resolved_type.value,
             category_id=resolved_category,
             working_path=rel_path,
-            snapshot_path=f".javis/originals/imports/{source_id}/original.md",
-            manifest_path=f".javis/originals/imports/{source_id}/manifest.json",
+            snapshot_path=snapshot_path,
+            manifest_path=manifest_path,
             reused_snapshot=existing_snapshot is not None,
             reused_working_copy=False,
             indexed=False,
