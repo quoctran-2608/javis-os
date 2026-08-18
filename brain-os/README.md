@@ -165,7 +165,7 @@ Gate 5 chỉ **plan taxonomy**, chưa move note thật. Các invariant chính:
 - ambiguous decision giữ ở candidate/unresolved thay vì đoán;
 - output có thể báo `would_move_to` nhưng không mutate source/frontmatter.
 
-### Gate 6 — Living Note + Markdown Import: hoàn tất khi Gate 0–6 xanh
+### Gate 6 — Living Note + Markdown Import: hoàn tất
 
 Bổ sung:
 
@@ -232,6 +232,46 @@ Invariant Gate 6:
 - chỉ category đã đăng ký mới được dùng; category bịa phải bị từ chối;
 - technical hashes/state vẫn ở `.javis`, không nhồi vào frontmatter người dùng.
 
+### Gate 7 — Amplenote Migration Adapter: hoàn tất
+
+Bổ sung:
+
+```text
+skills/brain-manager/scripts/
+├── import_amplenote.py
+└── brain_os_lib/
+    └── amplenote.py
+```
+
+Stage 7 là **migration adapter deterministic bọc quanh Gate 6**, không phải một importer/knowledge engine song song. Nó nhận Amplenote Markdown export dưới dạng thư mục hoặc ZIP, preflight toàn bộ Markdown trước khi ghi, rồi đưa từng note qua `import_markdown` để tái sử dụng cùng invariant provenance + stable identity của Gate 6.
+
+Mặc định chỉ preview:
+
+```bash
+python skills/brain-manager/scripts/import_amplenote.py "/path/amplenote-export.zip"
+```
+
+Chỉ ghi khi explicit `--apply`:
+
+```bash
+python skills/brain-manager/scripts/import_amplenote.py "/path/amplenote-export.zip" --apply
+```
+
+Các invariant Gate 7:
+
+- `--dry-run`/mặc định preview không ghi `.javis`, working note hay taxonomy vào Brain;
+- toàn batch được preflight trước khi note đầu tiên được ghi;
+- ZIP path traversal, absolute/drive path, symlink entry, encrypted entry và archive vượt safety limit bị từ chối fail-closed;
+- Markdown note vẫn có immutable `original.md` byte-for-byte + `javis_id` ổn định qua Gate 6;
+- ZIP export gốc được giữ nguyên byte-for-byte theo SHA-256 tại `.javis/originals/amplenote-exports/<sha256>/export.zip`;
+- provenance của từng note ghi `source_system: amplenote`, `source_entry` và `export_sha256` khi nguồn là ZIP;
+- legacy Amplenote tags được resolve qua registry/aliases hiện có; tag không biết không được tự biến thành canonical tag;
+- working note mới có `origin: amplenote_import`, canonical `tags` và `legacy_tags`, nhưng vẫn giữ metadata khác từ export;
+- exact re-import reuse identity/snapshot/working copy và **không overwrite user edits**;
+- Living Note `ĐIỀU TÔI HỌC ĐƯỢC` với legacy tags `dieutoihocduoc`, `mylife` đi về `Notes/Personal/Learning/` và không bị chẻ thành nhiều note;
+- non-Markdown asset trong ZIP chưa được materialize vào working Library ở Gate 7, nhưng không mất provenance vì toàn ZIP gốc đã được giữ nguyên;
+- Stage 7 không gọi AI, Javis INGEST, Wiki hay Memory.
+
 ## CLI hiện có
 
 ```bash
@@ -251,12 +291,14 @@ python skills/brain-manager/scripts/brain_os.py taxonomy
 python skills/brain-manager/scripts/brain_os.py taxonomy-plans --limit 50
 python skills/brain-manager/scripts/brain_os.py import "/path/file.md"
 python skills/brain-manager/scripts/brain_os.py import "/path/file.md" --apply
+python skills/brain-manager/scripts/import_amplenote.py "/path/amplenote-export.zip"
+python skills/brain-manager/scripts/import_amplenote.py "/path/amplenote-export.zip" --apply
 python skills/brain-manager/scripts/brain_os.py events --limit 50
 ```
 
-`status`, `doctor`, `config`, `fingerprint`, `classifications`, `taxonomy-plans` và `events` là read-only. `scan`, `reconcile`, `classify`, `taxonomy` chỉ ghi derived state. `import` mặc định preview; chỉ `import --apply` được phép tạo immutable snapshot + working note của file đang được nhập.
+`status`, `doctor`, `config`, `fingerprint`, `classifications`, `taxonomy-plans` và `events` là read-only. `scan`, `reconcile`, `classify`, `taxonomy` chỉ ghi derived state. `import` và `import_amplenote.py` mặc định preview; chỉ explicit `--apply` mới được tạo/reuse provenance + editable working note.
 
-## Gate kiểm thử 0–6
+## Gate kiểm thử 0–7
 
 Từ root repo:
 
@@ -271,22 +313,25 @@ pytest -q \
   brain-os/tests/test_stage5_taxonomy.py \
   brain-os/tests/test_stage6_importer.py \
   brain-os/tests/test_stage6_cli.py \
-  brain-os/tests/test_stage6_reimport_edges.py
+  brain-os/tests/test_stage6_reimport_edges.py \
+  brain-os/tests/test_stage7_amplenote.py
 ```
 
 Gate chỉ được đóng khi **toàn bộ** test của các chặng trước và chặng hiện tại cùng xanh. Không dùng skip/xfail/ignore hoặc hạ assertion để tạo green giả.
 
-## Những gì V1 ở Gate 6 vẫn cố ý chưa làm
+Gate 7 đã được chứng minh trên GitHub Actions runner thật bằng temporary Stage 0–7 bridge; bridge được gỡ ngay sau proof để workflow repo trở lại đúng baseline.
 
-- chưa Amplenote migration adapter — đó là Gate 7;
+## Những gì V1 ở Gate 7 vẫn cố ý chưa làm
+
 - chưa AI Brain Manager/policy fallback — Gate 8;
 - chưa Brain Watch automation — Gate 9; scheduler sẽ thuộc Javis Loop;
 - chưa PDF/DOCX/Sheets import — Gate 10;
-- chưa gọi Javis INGEST trong importer;
+- chưa materialize Amplenote images/attachments vào working Library; ZIP provenance vẫn được giữ nguyên để không mất dữ liệu nguồn;
+- chưa gọi Javis INGEST trong importer/migration adapter;
 - chưa tự tạo Wiki/Memory;
 - chưa semantic reorganization toàn vault;
 - chưa vector DB/embeddings;
 - chưa auto-create category/tag;
 - chưa realtime filesystem daemon riêng.
 
-Mặc định `System/BrainOS/config.yml` vẫn giữ `dry_run: true`, tắt auto-move và auto-create taxonomy. Quyền ghi ở Gate 6 chỉ mở theo hành động import explicit `--apply`, trên đúng file người dùng yêu cầu nhập.
+Mặc định `System/BrainOS/config.yml` vẫn giữ `dry_run: true`, tắt auto-move và auto-create taxonomy. Quyền ghi ở Gate 6–7 chỉ mở theo hành động import/migration explicit `--apply` và vẫn đi qua các invariant provenance/taxonomy đã được test.
