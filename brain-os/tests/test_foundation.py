@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 
@@ -14,6 +15,10 @@ def _load_validator():
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Không load được validator: {VALIDATOR}")
     module = importlib.util.module_from_spec(spec)
+    # dataclasses resolves annotation/module metadata through sys.modules.
+    # Register dynamic modules before exec_module so this loader is reliable on
+    # Python 3.12+ as well as local runtimes.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
