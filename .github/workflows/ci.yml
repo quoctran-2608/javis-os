@@ -57,8 +57,7 @@ jobs:
           exit $status
 
       # KHÔNG còn `cd server`: từ 0.9.242 test tự nạp đường dẫn qua tests/python/_paths.py
-      # nên chạy được từ bất kỳ thư mục làm việc nào. Trước đây chạy sai chỗ là hàng loạt
-      # test đỏ vì `import main` không thấy module, hoặc lặng lẽ đọc nhầm file.
+      # nên chạy được từ bất kỳ thư mục làm việc nào.
       - name: Chạy test Python (auth/secret/MCP-perm/traversal/CSRF + plugin)
         env:
           PYTHONIOENCODING: utf-8
@@ -69,3 +68,19 @@ jobs:
             python "$f" || status=1
           done
           exit $status
+
+      # TEMPORARY BRIDGE: chỉ dùng để chứng minh Gate 6 trên runner thật của repo.
+      # Sẽ gỡ ngay sau khi Gate 6 xanh.
+      - name: Brain OS Stage 0-6 gate (temporary)
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          python -m compileall -q brain-os/template/skills/brain-manager/scripts
+          pytest -q \
+            brain-os/tests/test_foundation.py \
+            brain-os/tests/test_core_stage2.py \
+            brain-os/tests/test_stage3_scanner.py \
+            brain-os/tests/test_stage3_identity_edges.py \
+            brain-os/tests/test_stage4_classifier.py \
+            brain-os/tests/test_stage5_taxonomy.py \
+            brain-os/tests/test_stage6_importer.py
