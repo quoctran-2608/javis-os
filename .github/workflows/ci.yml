@@ -69,3 +69,22 @@ jobs:
             python "$f" || status=1
           done
           exit $status
+
+      # TEMPORARY BRIDGE: chỉ dùng để chứng minh Gate 7 trên runner thật của repo.
+      # Sẽ gỡ ngay sau khi Gate 0-7 xanh.
+      - name: Brain OS Stage 0-7 gate (temporary)
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          python -m compileall -q brain-os/template/skills/brain-manager/scripts
+          pytest -q \
+            brain-os/tests/test_foundation.py \
+            brain-os/tests/test_core_stage2.py \
+            brain-os/tests/test_stage3_scanner.py \
+            brain-os/tests/test_stage3_identity_edges.py \
+            brain-os/tests/test_stage4_classifier.py \
+            brain-os/tests/test_stage5_taxonomy.py \
+            brain-os/tests/test_stage6_importer.py \
+            brain-os/tests/test_stage6_cli.py \
+            brain-os/tests/test_stage6_reimport_edges.py \
+            brain-os/tests/test_stage7_amplenote.py
