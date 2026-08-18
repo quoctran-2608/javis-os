@@ -1,0 +1,2 @@
+# Stage 10 only. PDF extraction is lazy; other Stage 10 formats use stdlib.
+pypdf>=5,<7
