@@ -259,18 +259,80 @@ python skills/brain-manager/scripts/import_amplenote.py "/path/amplenote-export.
 
 Các invariant Gate 7:
 
-- `--dry-run`/mặc định preview không ghi `.javis`, working note hay taxonomy vào Brain;
+- mặc định preview không ghi `.javis`, working note hay taxonomy vào Brain;
 - toàn batch được preflight trước khi note đầu tiên được ghi;
 - ZIP path traversal, absolute/drive path, symlink entry, encrypted entry và archive vượt safety limit bị từ chối fail-closed;
 - Markdown note vẫn có immutable `original.md` byte-for-byte + `javis_id` ổn định qua Gate 6;
 - ZIP export gốc được giữ nguyên byte-for-byte theo SHA-256 tại `.javis/originals/amplenote-exports/<sha256>/export.zip`;
 - provenance của từng note ghi `source_system: amplenote`, `source_entry` và `export_sha256` khi nguồn là ZIP;
 - legacy Amplenote tags được resolve qua registry/aliases hiện có; tag không biết không được tự biến thành canonical tag;
-- working note mới có `origin: amplenote_import`, canonical `tags` và `legacy_tags`, nhưng vẫn giữ metadata khác từ export;
 - exact re-import reuse identity/snapshot/working copy và **không overwrite user edits**;
 - Living Note `ĐIỀU TÔI HỌC ĐƯỢC` với legacy tags `dieutoihocduoc`, `mylife` đi về `Notes/Personal/Learning/` và không bị chẻ thành nhiều note;
 - non-Markdown asset trong ZIP chưa được materialize vào working Library ở Gate 7, nhưng không mất provenance vì toàn ZIP gốc đã được giữ nguyên;
 - Stage 7 không gọi AI, Javis INGEST, Wiki hay Memory.
+
+### Gate 8 — AI Brain Manager / Ingestion Policy & Routing: hoàn tất
+
+Bổ sung:
+
+```text
+skills/brain-manager/
+├── SKILL.md
+├── references/
+│   └── ai-output-schema.md
+└── scripts/
+    ├── brain_manager.py
+    └── brain_os_lib/
+        ├── ai_manager.py
+        ├── jobs.py
+        └── candidates.py
+```
+
+Stage 8 giữ ranh giới kiến trúc mới: **Javis thực thi AI; Brain OS chỉ governance + validation + routing**. Python không gọi model. Nó chỉ queue những case deterministic chưa giải được, cung cấp bounded evidence + constraints, validate output AI, rồi ghi derived state/candidate nếu hợp lệ.
+
+Pipeline:
+
+```text
+deterministic classifier/taxonomy
+        ↓ unresolved only
+Brain OS jobs queue
+        ↓
+Javis chạy Brain Manager Skill
+        ↓ structured JSON
+Python schema/policy validator
+        ↓
+derived type/category/tag suggestion + routing/candidate
+        ↓
+Javis xử lý INGEST/Wiki/Memory ở chặng thực thi phù hợp
+```
+
+Các invariant Gate 8:
+
+- chỉ queue case `needs_ai` hoặc taxonomy unresolved; case deterministic resolved không tốn AI;
+- `javis: ignore|index` không bị AI nâng quyền;
+- job id gắn với `source_id + content_hash + policy_id`, nên cùng state không tạo duplicate;
+- evidence gửi AI bị giới hạn, không đọc vô hạn Living Note;
+- note content được coi là **data**, không phải instruction; Skill ghi rõ chống prompt injection;
+- output phải đúng schema, không field thừa/thiếu;
+- stale `content_hash` bị từ chối, phải queue job mới;
+- AI không được gán privileged type `memory`, `derived_wiki`, `system`, `binary_source`;
+- deterministic document type/category đã commit luôn thắng AI;
+- AI chỉ được chọn exact category id/canonical tag đã có trong registry;
+- không auto-create category/tag;
+- confidence dưới acceptance gate chỉ tạo `ai_review` candidate, không commit type/category/routing state;
+- `ingest`/`incremental_ingest` chỉ chuyển derived processing state sang pending; **không tự chạy Javis INGEST**;
+- `wiki_candidate` và `memory_candidate` chỉ ghi candidate có provenance, **không ghi Wiki/Memory thật**;
+- Stage 8 không move/rename note, không rewrite frontmatter và không sửa user content;
+- invalid/stale/escalating output fail-closed và job được đánh dấu failed để có thể review/requeue.
+
+CLI Stage 8:
+
+```bash
+python skills/brain-manager/scripts/brain_manager.py queue --limit 3
+python skills/brain-manager/scripts/brain_manager.py jobs --status pending --limit 3
+python skills/brain-manager/scripts/brain_manager.py apply /tmp/brain-manager-result.json
+python skills/brain-manager/scripts/brain_manager.py candidates --status pending
+```
 
 ## CLI hiện có
 
@@ -284,8 +346,6 @@ python skills/brain-manager/scripts/brain_os.py scan
 python skills/brain-manager/scripts/brain_os.py scan --full-hash
 python skills/brain-manager/scripts/brain_os.py reconcile
 python skills/brain-manager/scripts/brain_os.py classify
-python skills/brain-manager/scripts/brain_os.py classify --path "Notes/example.md"
-python skills/brain-manager/scripts/brain_os.py classify --force
 python skills/brain-manager/scripts/brain_os.py classifications --needs-ai --limit 50
 python skills/brain-manager/scripts/brain_os.py taxonomy
 python skills/brain-manager/scripts/brain_os.py taxonomy-plans --limit 50
@@ -293,12 +353,16 @@ python skills/brain-manager/scripts/brain_os.py import "/path/file.md"
 python skills/brain-manager/scripts/brain_os.py import "/path/file.md" --apply
 python skills/brain-manager/scripts/import_amplenote.py "/path/amplenote-export.zip"
 python skills/brain-manager/scripts/import_amplenote.py "/path/amplenote-export.zip" --apply
+python skills/brain-manager/scripts/brain_manager.py queue --limit 3
+python skills/brain-manager/scripts/brain_manager.py jobs --status pending --limit 3
+python skills/brain-manager/scripts/brain_manager.py apply /tmp/brain-manager-result.json
+python skills/brain-manager/scripts/brain_manager.py candidates --status pending
 python skills/brain-manager/scripts/brain_os.py events --limit 50
 ```
 
-`status`, `doctor`, `config`, `fingerprint`, `classifications`, `taxonomy-plans` và `events` là read-only. `scan`, `reconcile`, `classify`, `taxonomy` chỉ ghi derived state. `import` và `import_amplenote.py` mặc định preview; chỉ explicit `--apply` mới được tạo/reuse provenance + editable working note.
+`status`, `doctor`, `config`, `fingerprint`, `classifications`, `taxonomy-plans`, `events`, Brain Manager `jobs` và `candidates` là read-only. Scanner/classifier/taxonomy/Brain Manager routing chỉ ghi derived state dưới `.javis`. Import/migration chỉ ghi user-facing working note khi có explicit `--apply`.
 
-## Gate kiểm thử 0–7
+## Gate kiểm thử 0–8
 
 Từ root repo:
 
@@ -314,24 +378,24 @@ pytest -q \
   brain-os/tests/test_stage6_importer.py \
   brain-os/tests/test_stage6_cli.py \
   brain-os/tests/test_stage6_reimport_edges.py \
-  brain-os/tests/test_stage7_amplenote.py
+  brain-os/tests/test_stage7_amplenote.py \
+  brain-os/tests/test_stage8_brain_manager.py
 ```
 
 Gate chỉ được đóng khi **toàn bộ** test của các chặng trước và chặng hiện tại cùng xanh. Không dùng skip/xfail/ignore hoặc hạ assertion để tạo green giả.
 
-Gate 7 đã được chứng minh trên GitHub Actions runner thật bằng temporary Stage 0–7 bridge; bridge được gỡ ngay sau proof để workflow repo trở lại đúng baseline.
+Gate 8 đã được chứng minh trên GitHub Actions runner thật bằng temporary Stage 0–8 bridge; bridge được gỡ ngay sau proof để workflow repo trở lại đúng baseline.
 
-## Những gì V1 ở Gate 7 vẫn cố ý chưa làm
+## Những gì V1 ở Gate 8 vẫn cố ý chưa làm
 
-- chưa AI Brain Manager/policy fallback — Gate 8;
-- chưa Brain Watch automation — Gate 9; scheduler sẽ thuộc Javis Loop;
+- chưa Brain Watch automation — Gate 9; scheduler thuộc Javis Loop, Brain OS chỉ scan/change/job pipeline;
 - chưa PDF/DOCX/Sheets import — Gate 10;
 - chưa materialize Amplenote images/attachments vào working Library; ZIP provenance vẫn được giữ nguyên để không mất dữ liệu nguồn;
-- chưa gọi Javis INGEST trong importer/migration adapter;
-- chưa tự tạo Wiki/Memory;
+- Brain Manager chưa tự thực thi Javis INGEST;
+- chưa tự tạo/update Wiki hoặc Memory; Stage 8 chỉ tạo routing/candidate;
 - chưa semantic reorganization toàn vault;
 - chưa vector DB/embeddings;
 - chưa auto-create category/tag;
 - chưa realtime filesystem daemon riêng.
 
-Mặc định `System/BrainOS/config.yml` vẫn giữ `dry_run: true`, tắt auto-move và auto-create taxonomy. Quyền ghi ở Gate 6–7 chỉ mở theo hành động import/migration explicit `--apply` và vẫn đi qua các invariant provenance/taxonomy đã được test.
+Mặc định `System/BrainOS/config.yml` vẫn giữ `dry_run: true`, tắt auto-move và auto-create taxonomy. Gate 8 chỉ ghi derived operational state/candidates vào `.javis`; quyền xử lý tri thức thật vẫn được giữ ở Javis execution layer.
