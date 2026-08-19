@@ -1,0 +1,5 @@
+# Brain OS deploy/runtime dependencies.
+# Keep this file self-contained so a copied Brain template can run independently
+# of the Javis repository root requirements.txt.
+PyYAML>=6.0,<7
+pypdf>=5,<7
