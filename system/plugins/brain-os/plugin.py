@@ -66,6 +66,11 @@ def _run(cmd: list[str], *, root: Path, stdin: str | None = None) -> str:
             errors="replace",
             timeout=_TIMEOUT_S,
             shell=False,
+            # Javis may run without a parent console on Windows.  A console-style
+            # helper (python.exe) would otherwise flash a new black window for every
+            # Brain OS operation.  CREATE_NO_WINDOW is absent off Windows, where 0 is
+            # the normal subprocess value and is safe to pass unconditionally.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired:
         return _error(f"Brain OS helper vượt timeout {_TIMEOUT_S}s.")
