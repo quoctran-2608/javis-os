@@ -1,0 +1,10 @@
+name: Brain OS Bridge
+slug: brain-os
+version: 1.0.0
+description: Chạy Brain OS helper trên đúng active Brain của Javis bằng PluginContext.vault_root, không phụ thuộc cwd của engine.
+author: Javis (bundled)
+enabled: true
+min_mode: auto
+tools:
+  - javis_brain_os
+hooks: []
