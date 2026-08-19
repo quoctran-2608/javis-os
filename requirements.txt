@@ -21,6 +21,10 @@ websockets==13.1
 edge-tts>=7.0.0
 python-multipart==0.0.18
 pyyaml>=6.0
+# Brain OS Stage 10 PDF normalization dùng text-layer parser này. Brain OS được cài theo từng
+# Brain nhưng code chạy trong chính runtime Python của Javis, nên dependency phải nằm ở tầng
+# app/runtime chứ không thể trông chờ việc copy một requirements file vào /brains tự cài pip.
+pypdf>=5.1,<6
 cryptography>=42.0
 jsonschema>=4.20,<5
 # segno: vẽ mã QR cho việc bật xác thực 2 lớp (2FA). Thuần Python, KHÔNG kéo theo dependency
