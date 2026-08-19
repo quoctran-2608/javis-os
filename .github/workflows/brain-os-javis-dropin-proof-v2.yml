@@ -1,8 +1,7 @@
 name: Brain OS Javis Drop-in Proof V2
 
 on:
-  push:
-    branches: [ brain-os-v1 ]
+  pull_request:
   workflow_dispatch:
 
 permissions:
