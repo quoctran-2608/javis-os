@@ -4,6 +4,10 @@ on:
   push:
     branches: [ brain-os-v1 ]
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
   proof:
     runs-on: ubuntu-latest
@@ -52,3 +56,41 @@ jobs:
           test -f brain-os/template/skills/brain-manager/scripts/brain_identity.py
           test -f brain-os/template/requirements-brain-os.txt
           test ! -e brain-os/template/.javis
+
+      - name: Publish proof status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          state="$JOB_STATUS"
+          if [ "$state" = "cancelled" ]; then state="error"; fi
+          if [ "$state" != "success" ] && [ "$state" != "failure" ] && [ "$state" != "error" ]; then state="error"; fi
+          python - <<'PY'
+          import json, os, urllib.request
+          repo = os.environ['GITHUB_REPOSITORY']
+          sha = os.environ['GITHUB_SHA']
+          state = os.environ['JOB_STATUS']
+          if state == 'cancelled':
+              state = 'error'
+          if state not in {'success','failure','error'}:
+              state = 'error'
+          payload = json.dumps({
+              'state': state,
+              'context': 'brain-os/identity-recovery-proof',
+              'description': 'Canonical Brain OS + integration + recovery hardening proof',
+          }).encode('utf-8')
+          req = urllib.request.Request(
+              f'https://api.github.com/repos/{repo}/statuses/{sha}',
+              data=payload,
+              method='POST',
+              headers={
+                  'Authorization': f"Bearer {os.environ['GH_TOKEN']}",
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'Content-Type': 'application/json',
+              },
+          )
+          with urllib.request.urlopen(req) as resp:
+              print(resp.status)
+          PY
