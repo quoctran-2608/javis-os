@@ -69,6 +69,27 @@ If the user explicitly asks to save/compound a query result:
 - Do not call `record_ingest.py` for the derived Wiki page; that helper records source/Living Note INGEST state, not Wiki output.
 - Explicit query compounding does not authorize source moves, Living Note rewrites, taxonomy creation, or actions outside the Brain.
 
+## Wiki lint / health audit
+
+A lint/health-check request is an audit request, not a repair request.
+
+In Brain OS-managed mode:
+
+- Lint may refresh deterministic derived state with `brain_os.py scan --compact`; this may update rebuildable `.javis/` state but must not mutate user Markdown.
+- Lint is otherwise read-only by default: no Wiki/source/Living Note edits, no auto merge/delete/rename, no `_open-questions.md` append, no taxonomy creation, and no automatic re-ingest.
+- Treat Wiki as derived knowledge. Audit provenance/backlinks, contradictions, broken links, duplicate concepts, coverage gaps and derived-boundary violations.
+- Do not infer stale from age or `mtime` alone. Use Brain OS lifecycle/state plus provenance; report `stale risk` until the current source content confirms the Wiki claim is actually stale.
+- A page indexed from `wiki/index.md` has a valid inbound navigation link; do not label it orphan merely because it has few peer links.
+- Missing concepts and gaps are candidates/findings, not permission to create Wiki or web-search automatically.
+- Prioritize correctness/provenance findings over cosmetic cleanup and return a numbered, bounded issue list.
+
+If the user explicitly asks to fix selected lint findings:
+
+- Apply only the selected issue/scope; do not turn one fix into a vault-wide cleanup.
+- Derived Wiki issues may be repaired directly while preserving provenance and contradiction history.
+- If a source/Living Note needs re-ingest, delegate to the governed `ingest-source` skill instead of rewriting the source from lint.
+- After Wiki writes, refresh derived state with `brain_os.py scan --compact`; never call `record_ingest.py` on Wiki output.
+
 ## Mandatory preflight before Javis INGEST
 
 1. Resolve the exact current Brain and target file.
@@ -118,7 +139,7 @@ This command must never rewrite the source note.
 
 `dry_run: true` keeps Brain OS automation/structural mutations conservative: no autonomous move, rename, taxonomy creation, user-note rewrite, or automatic Javis execution.
 
-A direct user command such as “tiêu hoá file X” is an explicit Javis execution request. It may write derived Wiki/Memory after this Brain OS preflight succeeds, while Brain OS structural safety rules remain in force. A direct `/notes` command likewise explicitly permits saving that current note through `capture_note.py --apply`. A direct query request is read-only unless it explicitly includes save/compound intent. Do not interpret any of these commands as permission to bypass ignored zones, provenance, stable identity, or Living Note rules.
+A direct user command such as “tiêu hoá file X” is an explicit Javis execution request. It may write derived Wiki/Memory after this Brain OS preflight succeeds, while Brain OS structural safety rules remain in force. A direct `/notes` command likewise explicitly permits saving that current note through `capture_note.py --apply`. A direct query request is read-only unless it explicitly includes save/compound intent. A lint request is read-only except for rebuildable derived-state refresh unless it explicitly includes a selected repair scope. Do not interpret any of these commands as permission to bypass ignored zones, provenance, stable identity, or Living Note rules.
 
 ## Wiki rules
 
