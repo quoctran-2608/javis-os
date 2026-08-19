@@ -22,7 +22,7 @@ Nếu Brain hiện tại có `System/BrainOS/config.yml`, đây là **Brain OS-m
 
 ## Brain OS capture bắt buộc
 
-Trong Brain OS-managed mode, **không chạy helper bằng path tương đối của shell**. Chat Javis có thể chạy cwd ở project root chứ không phải Brain. Luôn gọi system tool `javis_brain_os`, vì tool này lấy đúng active Brain từ `PluginContext.vault_root`.
+Trong Brain OS-managed mode, **KHÔNG tự tạo `sources/note-...md`** và **KHÔNG ghi `status: unprocessed/processed`**. Không chạy helper bằng path tương đối của shell. Chat Javis có thể chạy cwd ở project root chứ không phải Brain. Luôn gọi system tool `javis_brain_os`, vì tool này lấy đúng active Brain từ `PluginContext.vault_root`.
 
 Gọi:
 
@@ -33,6 +33,8 @@ javis_brain_os {
   apply: true
 }
 ```
+
+Implementation bên dưới bridge là `capture_note.py --apply --compact`; tên helper được giữ ở đây để audit/debug, **không phải lệnh agent được phép chạy trực tiếp bằng cwd hiện tại**.
 
 Có thể truyền `title` hoặc `category` khi người dùng/context đã xác định rõ. Helper sẽ tạo immutable provenance, stable `javis_id`, managed `living_note`, rồi scan/classify/taxonomy lại note; nó không tự INGEST/Wiki/Memory.
 
