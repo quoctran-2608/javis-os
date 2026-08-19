@@ -19,6 +19,8 @@ Trong Brain OS-managed mode, **không chạy `python skills/brain-manager/...` b
 
 Nếu tool này không khả dụng trong một Brain đã có Brain OS, dừng và báo runtime Javis chưa tương thích; không đoán `/brains/...` và không fallback sang shell relative path.
 
+Bridge ánh xạ các op tới implementation `import_amplenote.py`, `import_document.py`, `brain_os.py` và `record_ingest.py`. Các tên file này được giữ để audit/debug; agent **không gọi trực tiếp bằng relative cwd**.
+
 ## Preflight/import
 
 Nếu target nằm ngoài Brain, gọi một trong:
@@ -38,9 +40,9 @@ Từ chối ingest vùng cấm/ignored, `wiki/**`, `.javis/**`, `System/**`, ho�
 ## Living Note vs Reference Source
 
 ### Living Note
-- giữ nguyên ở `Notes/...`; không chuyển sang `sources/` chỉ vì ingest;
+- giữ nguyên ở `Notes/...`; **không chuyển sang `sources/`** chỉ vì ingest;
 - không split/replace/move note;
-- không ghi `status: processed` hay lifecycle kỹ thuật vào frontmatter;
+- **không ghi `status: processed`** hay lifecycle kỹ thuật vào frontmatter;
 - chỉ compound insight/framework tái sử dụng;
 - reflection/cảm xúc/context tạm có thể chỉ ở Living Note;
 - Wiki sinh ra phải backlink/cite Living Note.
