@@ -107,7 +107,11 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     try:
-        body = sys.stdin.read()
+        raw_body = sys.stdin.buffer.read()
+        try:
+            body = raw_body.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise NoteCaptureError("Nội dung /notes phải là UTF-8 hợp lệ.") from exc
         if not body or not body.strip():
             raise NoteCaptureError("Không có nội dung note trên stdin; từ chối tạo note rỗng.")
 
@@ -123,7 +127,7 @@ def main() -> int:
 
         with tempfile.TemporaryDirectory(prefix="brain-os-note-capture-") as temp_dir:
             source = Path(temp_dir) / filename
-            source.write_text(staging, encoding="utf-8", newline="")
+            source.write_bytes(staging.encode("utf-8"))
             result = import_markdown(
                 config,
                 source,
@@ -149,8 +153,8 @@ def main() -> int:
             "writes_wiki": False,
             "writes_memory": False,
             "document_type": "living_note",
-            "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
-            "body_bytes": len(body.encode("utf-8")),
+            "body_sha256": hashlib.sha256(raw_body).hexdigest(),
+            "body_bytes": len(raw_body),
             "result": result.to_dict(),
         }
         _json(payload, compact=bool(args.compact))
