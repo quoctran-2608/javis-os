@@ -1,6 +1,6 @@
 # Brain OS V1 — Hardening Status
 
-Brain OS V1 đã đóng Gate 0–10. Giai đoạn hardening không mở thêm feature gate; mục tiêu là làm các lớp hiện hữu recoverable, bounded và đủ quan sát trước real-vault rollout.
+Brain OS V1 đã đóng Gate 0–10. Giai đoạn hardening không mở thêm feature gate; mục tiêu là làm các lớp hiện hữu recoverable, bounded, đủ quan sát và tích hợp đúng với runtime Javis trước real-vault rollout.
 
 ## Trạng thái
 
@@ -12,8 +12,53 @@ Brain OS V1 đã đóng Gate 0–10. Giai đoạn hardening không mở thêm fe
 | Performance — large vault | PASS | 10k-note scanner proof: sparse scan reuses all unchanged hashes; one edit rehashes one file |
 | Safety | PASS within V1 scope | symlink/path traversal, malformed metadata, identity conflict, ZIP/document bounds, provenance/recovery tamper fail-closed |
 | Upgrade resilience | PASS for packaged extension | canonical + `.claude` governed skills must match; runtime scripts/contract/dependencies checked by pilot preflight |
+| Javis runtime integration | PROOF REQUIRED ON FINAL HEAD | active Brain phải lấy từ `ctx.vault_root`; governed skills dùng `javis_brain_os`; installer fail-closed khi runtime không tương thích hoặc target conflict |
 | Observability | PASS | `brain_recovery.py audit` + `brain_pilot.py check` expose DB, identity, lifecycle, locks, jobs, compatibility and blockers |
-| Real-vault rollout tooling | READY | initial pilot requires dry-run + Brain Watch disabled + recovery prepared; actual user vault still needs its own backup/pilot run |
+| Real-vault rollout tooling | READY AFTER DROP-IN PROOF | initial pilot requires installer preview/apply, dry-run + Brain Watch disabled + recovery prepared; actual user vault vẫn cần backup/pilot riêng |
+
+## Javis runtime integration contract
+
+Brain OS **không** giả định Claude/Javis chạy với cwd bằng thư mục Brain. Javis giữ cwd ở project root để bảo toàn system skill/plugin discovery. Vì vậy mọi thao tác Brain OS từ agent phải đi qua bundled tool `javis_brain_os`, tool này lấy active Brain từ `ctx.vault_root` rồi resolve script bằng absolute path trong Brain.
+
+Hệ quả:
+
+- không chạy `python skills/brain-manager/scripts/...` từ agent trong Brain OS-managed mode;
+- không đoán `/brains/<name>` từ cwd;
+- không đổi global Javis cwd sang Brain;
+- Brain không có `System/BrainOS/config.yml` thì bridge Brain OS fail-closed;
+- runtime Javis phải có bundled plugin `system/plugins/brain-os` và dependency Brain OS cần thiết, gồm `pypdf` trong root `requirements.txt`.
+
+## Cài vào một Brain Javis hiện hữu
+
+Không copy nguyên thư mục `brain-os-v1/` vào Brain và không `cp -r` mù `brain-os/template/` lên dữ liệu hiện hữu.
+
+Từ **Javis repository root**, dùng installer:
+
+```bash
+# Preview — không ghi target Brain
+python brain-os/install_brain_os.py "/brains/MyBrain"
+
+# Chỉ apply khi preview báo runtime compatible và conflicts = 0
+python brain-os/install_brain_os.py "/brains/MyBrain" --apply
+```
+
+Installer chỉ materialize các file Brain OS-owned cần thiết, bỏ qua system-skill mirrors do Javis `system_sync` sở hữu, giữ nguyên file không liên quan và từ chối overwrite nếu target đã có nội dung khác ở path do Brain OS quản lý.
+
+Layout sau cài là overlay ở **Brain root**, ví dụ:
+
+```text
+/brains/MyBrain/
+├── System/BrainOS/...
+├── System/Taxonomy/...
+├── skills/brain-manager/...
+└── Javis/loops/...
+```
+
+Không phải:
+
+```text
+/brains/MyBrain/brain-os-v1/template/...
+```
 
 ## Recovery contract
 
@@ -27,6 +72,8 @@ SQLite remains operational/derived. A safe rebuild is allowed only when the info
 Recovery evidence is not user knowledge and does not replace Markdown as source of truth. It exists to prevent a lost/corrupt operational DB from causing identity forks or blind re-ingest.
 
 ## Operational commands
+
+Các lệnh dưới đây là thao tác vận hành trực tiếp khi operator đã ở đúng Brain root hoặc truyền đúng `--brain-root`; agent Javis không dùng chúng để thay bridge.
 
 ```bash
 # Read-only diagnostics
