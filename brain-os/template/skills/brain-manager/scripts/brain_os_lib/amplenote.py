@@ -385,11 +385,13 @@ def migrate_amplenote(
     *,
     apply: bool = False,
 ) -> AmplenoteMigrationReport:
-    """Migrate an Amplenote Markdown export directory or ZIP.
+    """Migrate an Amplenote single Markdown note, export directory, or ZIP.
 
     Stage 7 is a deterministic adapter around Stage 6. It never calls AI or Javis
     INGEST/Wiki/Memory. Every note is preflighted in dry-run mode before any write.
     ZIP input is additionally preserved byte-for-byte under `.javis/originals/`.
+    A standalone Markdown export gets the same per-note immutable snapshot,
+    stable identity, tag canonicalization, and Amplenote provenance as batch input.
     """
     source = Path(source_path).expanduser().resolve()
     if not source.exists():
@@ -400,29 +402,35 @@ def migrate_amplenote(
     with tempfile.TemporaryDirectory(prefix="brain-os-amplenote-") as temp_dir:
         staging = Path(temp_dir)
         if source.is_file():
-            if source.suffix.casefold() != ".zip":
+            suffix = source.suffix.casefold()
+            if suffix == ".zip":
+                archive_infos, assets = _validate_zip(source)
+                note_sources = _write_zip_markdown_to_staging(
+                    source, staging, archive_infos
+                )
+                report.source_kind = "zip"
+                report.skipped_assets = assets
+                report.archive_sha256 = sha256_file(source)
+                report.archive_snapshot_path = str(
+                    config.brain_root / ".javis" / "originals" / "amplenote-exports"
+                    / report.archive_sha256 / "export.zip"
+                )
+            elif suffix in MARKDOWN_SUFFIXES:
+                note_sources = [(source.name, source)]
+                report.source_kind = "markdown"
+                report.skipped_assets = 0
+            else:
                 raise AmplenoteMigrationError(
-                    "Stage 7 nhận Amplenote export directory hoặc .zip, "
+                    "Stage 7 nhận Amplenote single Markdown, export directory hoặc .zip, "
                     f"không nhận file {source.name!r}"
                 )
-            archive_infos, assets = _validate_zip(source)
-            note_sources = _write_zip_markdown_to_staging(
-                source, staging, archive_infos
-            )
-            report.source_kind = "zip"
-            report.skipped_assets = assets
-            report.archive_sha256 = sha256_file(source)
-            report.archive_snapshot_path = str(
-                config.brain_root / ".javis" / "originals" / "amplenote-exports"
-                / report.archive_sha256 / "export.zip"
-            )
         elif source.is_dir():
             note_sources, assets = _directory_notes(source)
             report.source_kind = "directory"
             report.skipped_assets = assets
         else:
             raise AmplenoteMigrationError(
-                f"Amplenote export phải là directory hoặc ZIP thường: {source}"
+                f"Amplenote export phải là Markdown, directory hoặc ZIP thường: {source}"
             )
         if not note_sources:
             raise AmplenoteMigrationError(

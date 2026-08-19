@@ -25,9 +25,15 @@ def _json(data: dict[str, Any], *, compact: bool = False) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Brain OS Stage 7 — migrate an Amplenote Markdown export."
+        description=(
+            "Brain OS Stage 7 — migrate one Amplenote Markdown note, "
+            "an export directory, or a ZIP."
+        )
     )
-    parser.add_argument("source", help="Amplenote export directory or ZIP.")
+    parser.add_argument(
+        "source",
+        help="Standalone Amplenote Markdown file, export directory, or ZIP.",
+    )
     parser.add_argument("--brain-root", help="Override Brain/vault root.")
     parser.add_argument("--compact", action="store_true", help="Compact JSON output.")
 
