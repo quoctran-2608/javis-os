@@ -1,0 +1,140 @@
+name: Brain OS Javis Drop-in Proof V2
+
+on:
+  push:
+    branches: [ brain-os-v1 ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  arbitrary-brain-dropin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install integrated Javis runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Compile runtime, bridge, installer and Brain OS scripts
+        run: |
+          python -m compileall -q \
+            server \
+            system/plugins/brain-os \
+            brain-os/install_brain_os.py \
+            brain-os/template/skills/brain-manager/scripts
+
+      - name: Import real Javis server main
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          cd server
+          python -c "import main; print(f'ok, loaded main with {len(main.app.routes)} routes')"
+
+      - name: Run Javis JavaScript regression suite
+        run: |
+          status=0
+          for f in tests/js/test_*.js tests/js/test_*.mjs; do
+            [ -e "$f" ] || continue
+            echo "==== $(basename "$f") ===="
+            node "$f" || status=1
+          done
+          exit $status
+
+      - name: Run Javis Python regression suite
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          status=0
+          for f in tests/python/test_*.py; do
+            echo "==== $(basename "$f") ===="
+            python "$f" || status=1
+          done
+          exit $status
+
+      - name: Run complete Brain OS canonical and hardening suite
+        env:
+          PYTHONIOENCODING: utf-8
+        run: pytest -q brain-os/tests
+
+      - name: Verify governed skill package identity and bridge contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+          slugs = ('ingest-source', 'notes', 'query-wiki', 'lint-wiki')
+          forbidden = ('python skills/brain-manager/scripts/', 'python3 skills/brain-manager/scripts/')
+          for slug in slugs:
+              app = (root / '.claude' / 'skills' / slug / 'SKILL.md').read_bytes()
+              canonical = (root / 'brain-os' / 'template' / 'skills' / slug / 'SKILL.md').read_bytes()
+              mirror = (root / 'brain-os' / 'template' / '.claude' / 'skills' / slug / 'SKILL.md').read_bytes()
+              assert app == canonical == mirror, f'{slug}: governed skill copies differ'
+              text = app.decode('utf-8')
+              assert 'javis_brain_os' in text, f'{slug}: active-Brain bridge missing'
+              for bad in forbidden:
+                  assert bad not in text, f'{slug}: relative Brain OS execution path reintroduced: {bad}'
+
+          requirements = (root / 'requirements.txt').read_text(encoding='utf-8').casefold()
+          assert 'pypdf' in requirements, 'root Javis runtime does not install pypdf'
+          assert (root / 'system' / 'plugins' / 'brain-os' / 'plugin.py').is_file()
+          assert (root / 'system' / 'plugins' / 'brain-os' / 'plugin.yaml').is_file()
+          print('governed skill/runtime bridge package is consistent')
+          PY
+
+      - name: Install into an arbitrary existing Brain without touching unrelated data
+        run: |
+          BRAIN="$RUNNER_TEMP/brains/Random Existing Brain"
+          mkdir -p "$BRAIN/Notes"
+          printf '%s\n' '# Existing user note' 'must-survive-verbatim' > "$BRAIN/Notes/existing.md"
+          cp "$BRAIN/Notes/existing.md" "$RUNNER_TEMP/existing.before"
+
+          python brain-os/install_brain_os.py "$BRAIN" --compact > "$RUNNER_TEMP/preview.json"
+          python - "$RUNNER_TEMP/preview.json" <<'PY'
+          import json, sys
+          p = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert p['ok'] is True
+          assert p['apply'] is False
+          assert p['runtime']['compatible'] is True
+          assert p['plan']['conflicts'] == []
+          assert p['installed'] == []
+          PY
+          test ! -e "$BRAIN/System/BrainOS/config.yml"
+
+          python brain-os/install_brain_os.py "$BRAIN" --apply --compact > "$RUNNER_TEMP/apply.json"
+          python - "$RUNNER_TEMP/apply.json" <<'PY'
+          import json, sys
+          p = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert p['ok'] is True
+          assert p['apply'] is True
+          assert p['runtime']['compatible'] is True
+          assert p['plan']['conflicts'] == []
+          assert p['installed']
+          PY
+
+          cmp "$RUNNER_TEMP/existing.before" "$BRAIN/Notes/existing.md"
+          test -f "$BRAIN/System/BrainOS/config.yml"
+          test -f "$BRAIN/skills/brain-manager/scripts/brain_os.py"
+          test ! -e "$BRAIN/skills/notes/SKILL.md"
+          test ! -e "$BRAIN/.claude/skills/notes/SKILL.md"
+
+      - name: Re-run active-Brain drop-in tests explicitly
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          pytest -q \
+            brain-os/tests/test_javis_dropin_integration.py \
+            brain-os/tests/test_brain_os_installer.py \
+            brain-os/tests/test_javis_notes_integration.py \
+            brain-os/tests/test_javis_ingest_integration.py \
+            brain-os/tests/test_javis_query_wiki_integration.py \
+            brain-os/tests/test_javis_lint_wiki_integration.py
