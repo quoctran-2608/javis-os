@@ -11,6 +11,7 @@ from brain_os_lib.db import BrainIndex, BrainIndexError, utc_now
 from brain_os_lib.models import ProcessingState
 from brain_os_lib.paths import safe_join
 from brain_os_lib.reconcile import reconcile_brain
+from brain_os_lib.recovery import BrainRecoveryError, write_lifecycle_for_item
 
 
 class IngestRecordError(RuntimeError):
@@ -78,6 +79,11 @@ def record_ingest(
         item.state = (
             ProcessingState.COMPOUNDED if compounded else ProcessingState.INGESTED
         )
+
+        # Recovery checkpoint is written before the DB row. Javis INGEST has already
+        # happened when this helper is called, so if the DB update fails afterward,
+        # preserving the completed-ingest fact outside SQLite is the safer failure mode.
+        checkpoint = write_lifecycle_for_item(config, item)
         index.upsert_file(item)
 
         return {
@@ -90,6 +96,8 @@ def record_ingest(
             "last_ingested_hash": item.last_ingested_hash,
             "last_ingested_at": item.last_ingested_at,
             "state": item.state.value,
+            "recovery_checkpointed": True,
+            "recovery_state_hint": checkpoint["state_hint"],
             "writes_user_files": False,
             "derived_state_only": True,
         }
@@ -125,6 +133,7 @@ def main() -> int:
     except (
         BrainOSConfigError,
         BrainIndexError,
+        BrainRecoveryError,
         IngestRecordError,
         OSError,
         ValueError,

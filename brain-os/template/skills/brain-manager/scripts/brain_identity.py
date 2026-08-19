@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Recovery hardening: persist DB-only Brain OS identities into Markdown.
 
-This command is intentionally separate from scan/classify/watch. Preview is the
-default. `--apply` is explicit maintenance permission to add only `javis_id` to
-eligible user-authored Markdown, after preserving the exact pre-change bytes.
+Preview is the default. `--apply` is explicit maintenance permission to add only
+`javis_id` to eligible user-authored Markdown after byte-for-byte backup. Existing
+INGEST lifecycle is migrated conservatively so adding technical identity metadata
+does not create a false stale/re-ingest cycle.
 """
 
 from __future__ import annotations
@@ -23,6 +24,12 @@ from brain_os_lib.frontmatter import FrontmatterError, load_markdown, update_fro
 from brain_os_lib.identity import read_javis_id, valid_existing_id
 from brain_os_lib.models import ProcessingState
 from brain_os_lib.reconcile import reconcile_brain
+from brain_os_lib.recovery import (
+    BrainRecoveryError,
+    lifecycle_checkpoint_path,
+    read_lifecycle_checkpoint,
+    write_lifecycle_checkpoint,
+)
 
 
 class IdentityMaterializationError(RuntimeError):
@@ -119,12 +126,19 @@ def _indexed_items(config: BrainOSConfig):
     return items
 
 
+def _state_hint_for(config: BrainOSConfig, item) -> str:
+    existing = read_lifecycle_checkpoint(config, item.source_id)
+    if existing is not None:
+        return existing["state_hint"]
+    return "compounded" if item.state == ProcessingState.COMPOUNDED else "ingested"
+
+
 def plan_materialization(config: BrainOSConfig) -> dict[str, Any]:
     candidates: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
-    blocked_ingested: list[dict[str, Any]] = []
     durable: list[str] = []
     skipped: list[dict[str, str]] = []
+    lifecycle_migrations = 0
 
     for item in _indexed_items(config):
         if item.state == ProcessingState.MISSING:
@@ -163,30 +177,25 @@ def plan_materialization(config: BrainOSConfig) -> dict[str, Any]:
             "path": item.path,
             "source_id": item.source_id,
             "content_hash": item.content_hash,
+            "last_ingested_hash": item.last_ingested_hash,
+            "last_ingested_at": item.last_ingested_at,
+            "state": item.state.value,
+            "state_hint": _state_hint_for(config, item) if item.last_ingested_hash else "",
         }
         if item.last_ingested_hash:
-            blocked_ingested.append(
-                {
-                    **record,
-                    "last_ingested_hash": item.last_ingested_hash,
-                    "reason": "already_ingested_requires_separate_migration",
-                }
-            )
-            continue
+            lifecycle_migrations += 1
         candidates.append(record)
 
-    ready = not conflicts and not blocked_ingested
     return {
-        "ready_to_apply": ready,
+        "ready_to_apply": not conflicts,
         "candidates": candidates,
         "conflicts": conflicts,
-        "blocked_ingested": blocked_ingested,
         "durable_paths": durable,
         "skipped": skipped,
         "counts": {
             "candidates": len(candidates),
+            "lifecycle_migrations": lifecycle_migrations,
             "conflicts": len(conflicts),
-            "blocked_ingested": len(blocked_ingested),
             "already_durable": len(durable),
             "skipped": len(skipped),
         },
@@ -238,14 +247,29 @@ def _backup_identity_source(
     return original
 
 
+def _restore_lifecycle_rows(config: BrainOSConfig, changed: list[dict[str, Any]]) -> None:
+    if not config.db_path.is_file():
+        return
+    with BrainIndex(config.db_path) as index:
+        for record in changed:
+            if not record.get("last_ingested_hash"):
+                continue
+            current = index.get_file_by_path(record["path"])
+            if current is None:
+                continue
+            current.last_ingested_hash = record["last_ingested_hash"]
+            current.last_ingested_at = record.get("last_ingested_at", "")
+            try:
+                current.state = ProcessingState(record.get("state", "discovered"))
+            except ValueError:
+                current.state = ProcessingState.STALE
+            index.upsert_file(current)
+
+
 def apply_materialization(config: BrainOSConfig, plan: dict[str, Any]) -> dict[str, Any]:
     if plan["conflicts"]:
         raise IdentityMaterializationError(
             "Có frontmatter `javis_id` xung đột với DB; không tự overwrite identity do người dùng sở hữu."
-        )
-    if plan["blocked_ingested"]:
-        raise IdentityMaterializationError(
-            "Có note DB-only identity đã từng ingest; cần migration riêng để không tạo stale/re-ingest giả."
         )
 
     changed: list[dict[str, Any]] = []
@@ -253,6 +277,11 @@ def apply_materialization(config: BrainOSConfig, plan: dict[str, Any]) -> dict[s
         for record in plan["candidates"]:
             path = config.brain_root / record["path"]
             before = path.read_bytes()
+            before_doc = load_markdown(path)
+            checkpoint_path = lifecycle_checkpoint_path(config, record["source_id"])
+            prior_checkpoint_bytes = (
+                checkpoint_path.read_bytes() if checkpoint_path.is_file() else None
+            )
             backup = _backup_identity_source(
                 config,
                 source_id=record["source_id"],
@@ -268,15 +297,28 @@ def apply_materialization(config: BrainOSConfig, plan: dict[str, Any]) -> dict[s
                 raise IdentityMaterializationError(
                     f"Expected identity write nhưng file không đổi: {record['path']}"
                 )
+            after_doc = load_markdown(path)
             if read_javis_id(path) != record["source_id"]:
                 raise IdentityMaterializationError(
                     f"Identity verification failed sau apply: {record['path']}"
+                )
+            if before_doc.body != after_doc.body:
+                raise IdentityMaterializationError(
+                    f"Identity migration đã thay đổi Markdown body: {record['path']}"
+                )
+            expected_meta = dict(before_doc.metadata)
+            expected_meta["javis_id"] = record["source_id"]
+            if after_doc.metadata != expected_meta:
+                raise IdentityMaterializationError(
+                    f"Identity migration thay đổi metadata ngoài javis_id: {record['path']}"
                 )
             changed.append(
                 {
                     **record,
                     "backup_path": str(backup.relative_to(config.brain_root)),
                     "before_bytes": before,
+                    "checkpoint_path": checkpoint_path,
+                    "prior_checkpoint_bytes": prior_checkpoint_bytes,
                 }
             )
 
@@ -286,6 +328,7 @@ def apply_materialization(config: BrainOSConfig, plan: dict[str, Any]) -> dict[s
                 "Full reconcile sau identity materialization không PASS; rollback user files."
             )
 
+        migrated_lifecycle = 0
         with BrainIndex(config.db_path) as index:
             for record in changed:
                 current = index.get_file_by_path(record["path"])
@@ -293,13 +336,52 @@ def apply_materialization(config: BrainOSConfig, plan: dict[str, Any]) -> dict[s
                     raise IdentityMaterializationError(
                         f"Stable identity không giữ sau reconcile: {record['path']}"
                     )
+                if not record.get("last_ingested_hash"):
+                    continue
+
+                # Adding javis_id is a technical metadata migration. When the old
+                # source was current at its last successful ingest, advance the
+                # checkpoint to the new technical hash without asking Javis to
+                # ingest identical knowledge again. An already-stale source stays stale.
+                if record["last_ingested_hash"] == record["content_hash"]:
+                    current.last_ingested_hash = current.content_hash
+                    current.last_ingested_at = record.get("last_ingested_at", "")
+                    current.state = (
+                        ProcessingState.COMPOUNDED
+                        if record.get("state_hint") == "compounded"
+                        else ProcessingState.INGESTED
+                    )
+                else:
+                    current.last_ingested_hash = record["last_ingested_hash"]
+                    current.last_ingested_at = record.get("last_ingested_at", "")
+                    current.state = ProcessingState.STALE
+                index.upsert_file(current)
+                write_lifecycle_checkpoint(
+                    config,
+                    source_id=current.source_id,
+                    path=current.path,
+                    last_ingested_hash=current.last_ingested_hash,
+                    last_ingested_at=current.last_ingested_at,
+                    state_hint=record.get("state_hint") or "ingested",
+                )
+                migrated_lifecycle += 1
 
         public_changed = [
-            {key: value for key, value in record.items() if key != "before_bytes"}
+            {
+                key: value
+                for key, value in record.items()
+                if key
+                not in {
+                    "before_bytes",
+                    "checkpoint_path",
+                    "prior_checkpoint_bytes",
+                }
+            }
             for record in changed
         ]
         return {
             "applied": len(changed),
+            "lifecycle_migrated": migrated_lifecycle,
             "changed": public_changed,
             "scan": scan.to_dict(),
         }
@@ -312,9 +394,19 @@ def apply_materialization(config: BrainOSConfig, plan: dict[str, Any]) -> dict[s
                 )
             except OSError:
                 pass
+            try:
+                checkpoint_path = record["checkpoint_path"]
+                prior = record.get("prior_checkpoint_bytes")
+                if prior is None:
+                    checkpoint_path.unlink(missing_ok=True)
+                else:
+                    _atomic_write_bytes(checkpoint_path, prior)
+            except OSError:
+                pass
         try:
             if config.db_path.is_file():
                 reconcile_brain(config, full_hash=True)
+                _restore_lifecycle_rows(config, changed)
         except Exception:
             pass
         raise
@@ -384,6 +476,7 @@ def main() -> int:
         IdentityMaterializationError,
         BrainOSConfigError,
         BrainIndexError,
+        BrainRecoveryError,
         FrontmatterError,
         OSError,
         ValueError,
