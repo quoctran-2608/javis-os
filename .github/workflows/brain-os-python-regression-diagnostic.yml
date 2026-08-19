@@ -3,6 +3,7 @@ name: Brain OS Python Regression Diagnostic
 on:
   push:
     branches: [ brain-os-v1 ]
+  pull_request:
   workflow_dispatch:
 
 permissions:
