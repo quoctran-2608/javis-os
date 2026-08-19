@@ -15,7 +15,7 @@ Nếu Brain hiện tại có `System/BrainOS/config.yml`, đây là **Brain OS-m
 
 ## Mặc định chỉ AUDIT
 
-Lint là yêu cầu kiểm tra, không phải lệnh sửa. **Không tự sửa, merge, rename, delete hoặc tạo Wiki**; **không tự append `_open-questions.md`**; **không tự re-ingest source/Living Note**; không ghi lifecycle frontmatter; không tự tạo taxonomy; và **không ingest `wiki/**`**.
+Lint là yêu cầu kiểm tra, không phải lệnh sửa. **không tự sửa, merge, rename, delete hoặc tạo Wiki**; **không tự append `_open-questions.md`**; **không tự re-ingest source/Living Note**; không ghi lifecycle frontmatter; không tự tạo taxonomy; và **không ingest `wiki/**`**.
 
 **Người dùng phải chọn issue hoặc scope sửa rõ ràng** trước khi có write side effect.
 

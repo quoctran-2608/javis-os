@@ -15,7 +15,7 @@ Nếu Brain hiện tại có `System/BrainOS/config.yml`, đây là **Brain OS-m
 
 ## Mặc định là READ-ONLY
 
-Câu hỏi về Brain cho phép đọc và suy luận, không mặc nhiên cho phép ghi. **Không tự append `wiki/_open-questions.md`**, không tự tạo Wiki, không sửa source/Living Note và không re-ingest Wiki.
+Câu hỏi về Brain cho phép đọc và suy luận, không mặc nhiên cho phép ghi. **không tự append `wiki/_open-questions.md`**, không tự tạo Wiki, không sửa source/Living Note và không re-ingest Wiki.
 
 **Chỉ ghi khi người dùng yêu cầu rõ** việc lưu/compound kết quả hoặc sửa một phạm vi cụ thể. Việc query không được biến thành write side effect chỉ vì thiếu dữ liệu.
 
