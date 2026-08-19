@@ -9,13 +9,51 @@ Tài liệu này là runbook vận hành cho Brain thật. Nó không tự cấp
 - `.javis/recovery/` chứa **recovery evidence** cho stable identity/lần INGEST thành công gần nhất; không phải user knowledge nhưng phải được giữ cùng backup của Brain.
 - `wiki/` là derived knowledge; không ingest ngược vào source.
 - Initial pilot luôn giữ `dry_run: true` và `Javis/loops/brain-watch.md` ở `enabled: false`.
+- Không đổi Javis global cwd sang Brain; agent thao tác Brain OS qua `javis_brain_os`, dùng active Brain từ runtime context.
+
+## Cài Brain OS vào một Brain Javis hiện hữu
+
+Không copy nguyên `brain-os-v1/` vào trong Brain và không overlay template bằng `cp -r` mù. Từ **Javis repository root**, chạy installer trước ở preview mode:
+
+```bash
+python brain-os/install_brain_os.py "/brains/MyBrain"
+```
+
+Chỉ khi report cho biết runtime compatible và không có conflict mới apply:
+
+```bash
+python brain-os/install_brain_os.py "/brains/MyBrain" --apply
+```
+
+Installer giữ nguyên dữ liệu không liên quan, không delete và không overwrite path Brain OS-owned đang có nội dung khác. Nếu có conflict, dừng để review/migrate thay vì ép ghi đè.
+
+Expected layout sau cài nằm trực tiếp ở Brain root:
+
+```text
+/brains/MyBrain/
+├── System/BrainOS/...
+├── System/Taxonomy/...
+├── skills/brain-manager/...
+└── Javis/loops/...
+```
 
 ## Chuẩn bị runtime
 
+Dependency tích hợp phải được cài từ **root requirements của Javis**; không dựa vào việc một file requirements nằm bên trong Brain tự được cài:
+
 ```bash
-pip install -r requirements-brain-os.txt
+# chạy ở Javis repository root / image build context
+pip install -r requirements.txt
+```
+
+Sau khi installer apply, chuyển sang đúng Brain root để chạy operator diagnostics trực tiếp:
+
+```bash
+cd "/brains/MyBrain"
 python skills/brain-manager/scripts/brain_os.py doctor
 ```
+
+Trong phiên agent Javis, không thay thế `javis_brain_os` bằng relative shell command ở trên; CLI này dành cho operator/maintenance đã biết chính xác Brain target.
 
 ## Chuẩn bị recovery trước dữ liệu thật
 
@@ -56,7 +94,8 @@ Preflight yêu cầu tối thiểu:
 - không có Brain Watch/recovery lock đang giữ;
 - không có AI job ở trạng thái `processing`;
 - governed skills canonical/mirror khớp nhau;
-- runtime có PyYAML + pypdf.
+- runtime có PyYAML + pypdf;
+- Javis runtime có active-Brain bridge `javis_brain_os` tương thích.
 
 ## Rebuild SQLite
 
