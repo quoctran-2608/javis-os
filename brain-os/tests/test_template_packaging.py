@@ -33,5 +33,19 @@ def test_deploy_template_ships_governed_javis_skills_at_canonical_and_mirror_pat
         assert canonical_text == mirror_text
 
 
+def test_deploy_template_ships_recovery_and_pilot_runtime():
+    scripts = TEMPLATE / "skills" / "brain-manager" / "scripts"
+    for name in (
+        "brain_identity.py",
+        "brain_recovery.py",
+        "brain_pilot.py",
+        "record_ingest.py",
+    ):
+        assert (scripts / name).is_file(), name
+    assert (scripts / "brain_os_lib" / "recovery.py").is_file()
+    assert (TEMPLATE / "System" / "BrainOS" / "javis-integration.md").is_file()
+    assert (TEMPLATE / "Javis" / "loops" / "brain-watch.md").is_file()
+
+
 def test_deploy_template_has_no_runtime_state():
     assert not (TEMPLATE / ".javis").exists()
