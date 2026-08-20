@@ -461,7 +461,7 @@ def migrate_amplenote(
             imported = import_markdown(config, note_path, dry_run=False)
             plan = _plan_from_import(registry, entry, note_path, imported)
             _augment_note_manifest(
-                Path(imported.manifest_path),
+                config.brain_root / Path(imported.manifest_path),
                 source_entry=entry,
                 archive_sha256=report.archive_sha256,
             )
