@@ -69,3 +69,12 @@ jobs:
             python "$f" || status=1
           done
           exit $status
+
+      # Brain OS có regression suite riêng cho identity, scanner, taxonomy, import,
+      # Amplenote, documents, Javis bridge, recovery và pilot readiness. Từ đây suite
+      # này là một phần bắt buộc của CI chính để regression không thể xanh giả chỉ vì
+      # tests/python không thu thập brain-os/tests.
+      - name: Chạy Brain OS regression tests
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python -m pytest -q brain-os/tests
