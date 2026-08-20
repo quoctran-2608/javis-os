@@ -88,7 +88,8 @@ def test_cli_import_apply_creates_snapshot_and_working_copy(brain: Path, tmp_pat
     result = payload["result"]
     assert result["indexed"] is True
     assert (brain / result["working_path"]).is_file()
-    assert Path(result["snapshot_path"]).read_bytes() == source.read_bytes()
+    assert not Path(result["snapshot_path"]).is_absolute()
+    assert (brain / result["snapshot_path"]).read_bytes() == source.read_bytes()
 
 
 def test_cli_import_rejects_unregistered_category_without_writes(
