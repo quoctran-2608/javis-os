@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 from pathlib import Path
@@ -10,6 +11,7 @@ from .models import DocumentType, IdentityDecision
 
 GENERATED_ID_RE = re.compile(r"^(?:note|src|mem|file)_[0-9a-f]{12}$")
 SAFE_EXISTING_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
 
@@ -32,7 +34,35 @@ def _prefix_for(document_type: DocumentType | str) -> str:
 
 
 def new_source_id(document_type: DocumentType | str = DocumentType.UNKNOWN) -> str:
+    """Create a random identity for newly authored Brain content."""
     return f"{_prefix_for(document_type)}_{uuid.uuid4().hex[:12]}"
+
+
+def deterministic_import_source_id(
+    document_type: DocumentType | str,
+    source_sha256: str,
+) -> str:
+    """Return the stable identity preview/apply must share for one external import.
+
+    Import identity is content-addressed and domain-separated from other future
+    identity schemes.  The document type participates in the digest so the same
+    bytes intentionally imported under two supported semantic types do not claim
+    the same identity.  Existing valid ``javis_id`` values and immutable snapshots
+    still take precedence in the importer, preserving backward compatibility.
+    """
+    raw_hash = str(source_sha256 or "").strip().lower()
+    if not SHA256_RE.fullmatch(raw_hash):
+        raise ValueError("source_sha256 phải là SHA-256 hex 64 ký tự hợp lệ")
+
+    kind = (
+        document_type.value
+        if isinstance(document_type, DocumentType)
+        else str(document_type or "").strip()
+    )
+    digest = hashlib.sha256(
+        f"brain-os-import-v1\0{kind}\0{raw_hash}".encode("utf-8")
+    ).hexdigest()[:12]
+    return f"{_prefix_for(document_type)}_{digest}"
 
 
 def valid_existing_id(value: str) -> bool:
