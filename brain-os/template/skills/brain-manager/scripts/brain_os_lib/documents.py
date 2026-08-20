@@ -135,7 +135,7 @@ def _load_document_manifest(config:BrainOSConfig,*,source_id:str,source_hash:str
     if not library_path.is_file(): raise DocumentImportError(f"Library original bị thiếu: {library_path}")
     actual=sha256_file(library_path)
     if actual!=source_hash: raise DocumentImportError(f"Library original immutable bị thay đổi: {library_path}; expected={source_hash} actual={actual}")
-    normalized_snapshot=Path(str(payload.get("normalized_snapshot_path") or "")); normalized_hash=str(payload.get("normalized_source_sha256") or "")
+    normalized_snapshot=config.brain_root/Path(str(payload.get("normalized_snapshot_path") or "")); normalized_hash=str(payload.get("normalized_source_sha256") or "")
     if not normalized_snapshot.is_file() or len(normalized_hash)!=64: raise DocumentImportError(f"Document manifest thiếu normalized provenance hợp lệ: {manifest}")
     actual_normalized=sha256_file(normalized_snapshot)
     if actual_normalized!=normalized_hash: raise DocumentImportError(f"Normalized immutable snapshot bị thay đổi: {normalized_snapshot}; expected={normalized_hash} actual={actual_normalized}")
@@ -171,7 +171,7 @@ def _refresh_after_origin_update(config:BrainOSConfig,working_path:str)->None:
     reconcile_brain(config,full_hash=True); classify_brain(config,paths={working_path}); plan_brain_taxonomy(config,paths={working_path})
 
 def _result_from_existing(config:BrainOSConfig,payload:dict[str,Any],*,dry_run:bool)->DocumentImportResult:
-    snapshot_path=Path(str(payload["normalized_snapshot_path"])); import_result=import_markdown(config,snapshot_path,document_type="reference_source",category_id=str(payload.get("category_id") or ""),dry_run=dry_run)
+    snapshot_path=config.brain_root/Path(str(payload["normalized_snapshot_path"])); import_result=import_markdown(config,snapshot_path,document_type="reference_source",category_id=str(payload.get("category_id") or ""),dry_run=dry_run)
     if not dry_run and not import_result.reused_working_copy:
         update_frontmatter(config.brain_root/import_result.working_path,updates={"origin":"document_import"},dry_run=False); _refresh_after_origin_update(config,import_result.working_path)
     return DocumentImportResult(True,dry_run,str(payload["source_id"]),str(payload["source_sha256"]),str(payload["source_format"]),str(payload.get("extraction_backend") or ""),str(payload["library_path"]),import_result.working_path,import_result.snapshot_path,import_result.manifest_path,True,True,import_result.indexed,tuple(payload.get("warnings") or ()))
