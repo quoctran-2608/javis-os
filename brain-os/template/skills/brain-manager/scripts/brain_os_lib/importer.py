@@ -10,7 +10,7 @@ from .classifier import classify_brain
 from .config import BrainOSConfig
 from .db import BrainIndex
 from .frontmatter import FrontmatterError, load_markdown, render_markdown
-from .identity import new_source_id, valid_existing_id
+from .identity import deterministic_import_source_id, valid_existing_id
 from .models import DocumentType, ProcessingState
 from .originals import OriginalSnapshot, OriginalStore, sha256_bytes
 from .paths import safe_join
@@ -419,7 +419,7 @@ def import_markdown(
         source_id = (
             existing_id
             if valid_existing_id(existing_id)
-            else new_source_id(resolved_type)
+            else deterministic_import_source_id(resolved_type, source_hash)
         )
 
         rel_path = _destination_rel(
