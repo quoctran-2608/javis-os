@@ -57,7 +57,9 @@ def test_living_note_import_preserves_original_and_routes_to_registered_home(
     assert result.source_id.startswith("note_")
     assert source.read_bytes() == before
 
-    snapshot = Path(result.snapshot_path)
+    assert not Path(result.snapshot_path).is_absolute()
+    assert not Path(result.manifest_path).is_absolute()
+    snapshot = brain / result.snapshot_path
     assert snapshot.read_bytes() == before
     assert sha256_file(snapshot) == result.source_sha256
 
@@ -87,7 +89,7 @@ def test_working_copy_is_editable_and_exact_reimport_is_idempotent(
         dry_run=False,
     )
     working = brain / first.working_path
-    snapshot_before = Path(first.snapshot_path).read_bytes()
+    snapshot_before = (brain / first.snapshot_path).read_bytes()
     working.write_text(
         working.read_text(encoding="utf-8") + "\nUser edit after import.\n",
         encoding="utf-8",
@@ -101,7 +103,7 @@ def test_working_copy_is_editable_and_exact_reimport_is_idempotent(
     assert second.reused_snapshot is True
     assert second.reused_working_copy is True
     assert working.read_bytes() == edited
-    assert Path(first.snapshot_path).read_bytes() == snapshot_before
+    assert (brain / first.snapshot_path).read_bytes() == snapshot_before
 
 
 def test_reference_source_defaults_to_sources_unsorted(brain: Path, tmp_path: Path):
@@ -198,7 +200,7 @@ def test_snapshot_tamper_fails_closed(brain: Path, tmp_path: Path):
     cfg = BrainOSConfig.load(brain)
     first = import_markdown(cfg, source, dry_run=False)
 
-    Path(first.snapshot_path).write_text("# tampered\n", encoding="utf-8")
+    (brain / first.snapshot_path).write_text("# tampered\n", encoding="utf-8")
 
     with pytest.raises(OriginalsError):
         import_markdown(cfg, source, dry_run=False)
@@ -211,7 +213,7 @@ def test_manifest_contains_provenance_not_working_note_hash_state(
     cfg = BrainOSConfig.load(brain)
     result = import_markdown(cfg, source, dry_run=False)
 
-    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+    manifest = json.loads((brain / result.manifest_path).read_text(encoding="utf-8"))
     assert manifest["source_id"] == result.source_id
     assert manifest["source_sha256"] == result.source_sha256
     assert manifest["working_path"] == result.working_path
