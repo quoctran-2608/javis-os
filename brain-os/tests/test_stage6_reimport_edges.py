@@ -40,7 +40,7 @@ def test_reimport_after_working_copy_deleted_reuses_original_identity(
         category_id="notes_personal_learning",
         dry_run=False,
     )
-    first_snapshot = Path(first.snapshot_path)
+    first_snapshot = brain / first.snapshot_path
     first_working = brain / first.working_path
     first_working.unlink()
 
@@ -53,6 +53,7 @@ def test_reimport_after_working_copy_deleted_reuses_original_identity(
     restored = brain / second.working_path
     assert restored.is_file()
     assert load_markdown(restored).metadata["javis_id"] == first.source_id
+    assert not Path(first.snapshot_path).is_absolute()
     assert first_snapshot.is_file()
     assert len(list((brain / ".javis" / "originals" / "imports").glob("*/manifest.json"))) == 1
 
