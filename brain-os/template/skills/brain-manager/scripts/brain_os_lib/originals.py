@@ -116,11 +116,17 @@ class OriginalStore:
                 f"Snapshot immutable bị thay đổi: {original}; expected={source_hash} actual={actual}"
             )
 
+        # Public provenance paths are Brain-relative, like working_path and all
+        # dry-run plans. Keep absolute Paths only for internal filesystem I/O so
+        # preview/apply results are deterministic and portable across Brain roots.
+        snapshot_path = original.relative_to(self.brain_root).as_posix()
+        manifest_rel = manifest_path.relative_to(self.brain_root).as_posix()
+
         return OriginalSnapshot(
             source_id=source_id,
             source_sha256=source_hash,
-            snapshot_path=str(original),
-            manifest_path=str(manifest_path),
+            snapshot_path=snapshot_path,
+            manifest_path=manifest_rel,
             working_path=str(payload.get("working_path") or ""),
             document_type=str(payload.get("document_type") or ""),
             category_id=str(payload.get("category_id") or ""),

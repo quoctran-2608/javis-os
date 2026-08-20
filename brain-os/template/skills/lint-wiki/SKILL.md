@@ -64,6 +64,17 @@ Trả danh sách đánh số; mỗi issue gồm severity, loại, trang/nguồn,
 
 Các nhãn issue nên nhất quán, bao gồm **Provenance weakness** và **Derived-boundary violation** khi phù hợp.
 
+## Kỷ luật kết luận
+
+Lint chỉ được kết luận trong phạm vi evidence thực sự đã đọc và kiểm tra.
+
+- Không dùng các kết luận tuyệt đối như `100% healthy`, `fully verified`, `perfect`, `không thể có lỗi`, hoặc diễn đạt tương đương.
+- Khi không phát hiện vấn đề đáng kể, dùng cách nói: **`Không phát hiện issue material trong phạm vi đã kiểm tra.`**
+- **`Không phát hiện` không đồng nghĩa với `đã chứng minh không tồn tại`.**
+- Các kết luận như `0 contradiction`, `0 missing concept candidate`, `0 coverage gap` phải gắn rõ với **scope audit đã thực hiện**, không được nâng thành bảo đảm cho toàn Brain.
+- Nếu audit chỉ sample, không đọc toàn bộ source/provenance liên quan, hoặc một phép kiểm không thể chứng minh đầy đủ bằng evidence hiện có, phải nêu giới hạn đó thay vì suy rộng.
+- Chỉ dùng `verified` cho một assertion cụ thể đã được đối chiếu bằng evidence phù hợp; không dùng `fully verified` cho toàn bộ Wiki chỉ từ một lượt lint.
+
 ## Khi user yêu cầu sửa
 
 Người dùng phải chọn issue hoặc scope sửa rõ ràng. Sau đó sửa nhóm nhỏ, giữ provenance và contradiction history; không biến một yêu cầu repair cục bộ thành rewrite toàn Wiki.
