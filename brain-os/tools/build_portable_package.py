@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Build a deterministic Brain OS V1 portable installer ZIP.
 
-The resulting archive contains one top-level ``BrainOS-V1-Portable`` directory. A user
-extracts that directory directly inside a fresh Brain and runs ``python install.py``.
+The resulting archive is named ``BrainOS-V1-Portable.zip`` but contains one hidden
+``.brain-os-installer`` directory. A user extracts that directory directly inside a
+fresh Brain and runs ``python .brain-os-installer/install.py``. The leading dot is a
+safety boundary: Brain OS has ``scan.ignore_hidden: true``, so the temporary installer
+and its Markdown documentation can never be mistaken for user knowledge while present.
+
 Only Brain-OS-owned overlay files are bundled; app-owned system skills/mirrors and all
 runtime/user-derived data are deliberately excluded.
 """
@@ -18,7 +22,8 @@ import subprocess
 import zipfile
 from pathlib import Path
 
-PACKAGE_NAME = "BrainOS-V1-Portable"
+PACKAGE_DIR_NAME = ".brain-os-installer"
+ARCHIVE_NAME = "BrainOS-V1-Portable.zip"
 PACKAGE_SCHEMA = 1
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 
@@ -71,34 +76,41 @@ Javis version at build: `{app_version or 'unknown'}`
 
 ## Cách dùng cho Brain mới
 
-Đặt nguyên thư mục `{PACKAGE_NAME}` trực tiếp bên trong Brain mới, ví dụ:
+Copy `{ARCHIVE_NAME}` vào Brain mới rồi giải nén tại đó. ZIP tạo ra thư mục ẩn
+`{PACKAGE_DIR_NAME}` trực tiếp bên trong Brain, ví dụ:
 
 ```text
 brains/MinhSecondBrain/
 ├── ... dữ liệu/scaffold Javis mới ...
-└── {PACKAGE_NAME}/
+├── {ARCHIVE_NAME}
+└── {PACKAGE_DIR_NAME}/
 ```
 
-Sau đó chạy **preview trước**:
+Thư mục installer bắt đầu bằng dấu chấm có chủ ý để Brain OS scanner bỏ qua toàn bộ
+package trong lúc cài (`scan.ignore_hidden: true`).
+
+Sau đó chạy **preview trước** từ Brain root:
 
 ```bash
-python {PACKAGE_NAME}/install.py
+python {PACKAGE_DIR_NAME}/install.py
 ```
 
 Nếu `ok: true`, `runtime.compatible: true`, `package_integrity.ok: true` và
 `plan.conflicts` rỗng thì mới apply:
 
 ```bash
-python {PACKAGE_NAME}/install.py --apply
+python {PACKAGE_DIR_NAME}/install.py --apply
 ```
 
 Cuối cùng verify read-only:
 
 ```bash
-python {PACKAGE_NAME}/install.py --verify
+python {PACKAGE_DIR_NAME}/install.py --verify
 ```
 
 Nếu Brain nằm ngoài `<Javis>/brains/`, thêm `--javis-root <đường-dẫn-Javis>` cho cả ba lệnh.
+Sau khi verify PASS có thể xoá `{PACKAGE_DIR_NAME}` và `{ARCHIVE_NAME}`; Brain OS đã được
+cài ở đúng các path do nó quản lý trong Brain.
 
 ## Những gì package KHÔNG chứa
 
@@ -139,7 +151,7 @@ def build(repo_root: Path, output_dir: Path, *, source_sha: str = "") -> dict:
     app_version = _app_version(repo_root)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    package_dir = output_dir / PACKAGE_NAME
+    package_dir = output_dir / PACKAGE_DIR_NAME
     if package_dir.exists():
         shutil.rmtree(package_dir)
     package_dir.mkdir(parents=True)
@@ -168,6 +180,9 @@ def build(repo_root: Path, output_dir: Path, *, source_sha: str = "") -> dict:
     manifest = {
         "package_schema": PACKAGE_SCHEMA,
         "name": "Brain OS V1 Portable Installer",
+        "package_directory": PACKAGE_DIR_NAME,
+        "archive_name": ARCHIVE_NAME,
+        "scanner_hidden": True,
         "source_sha": source_sha,
         "javis_version": app_version,
         "payload_file_count": len(payload_files),
@@ -204,7 +219,7 @@ def build(repo_root: Path, output_dir: Path, *, source_sha: str = "") -> dict:
         "\n".join(checksum_lines) + "\n", encoding="utf-8", newline="\n"
     )
 
-    zip_path = output_dir / f"{PACKAGE_NAME}.zip"
+    zip_path = output_dir / ARCHIVE_NAME
     _write_deterministic_zip(package_dir, zip_path)
     return {
         "ok": True,
@@ -212,6 +227,7 @@ def build(repo_root: Path, output_dir: Path, *, source_sha: str = "") -> dict:
         "source_sha": source_sha,
         "javis_version": app_version,
         "package_dir": str(package_dir),
+        "package_directory": PACKAGE_DIR_NAME,
         "zip_path": str(zip_path),
         "zip_sha256": sha256(zip_path),
         "payload_file_count": len(payload_files),
