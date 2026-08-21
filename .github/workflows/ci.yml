@@ -110,9 +110,9 @@ jobs:
           PYTHONIOENCODING: utf-8
         run: python -m pytest -q brain-os/tests/test_release_dropin_e2e.py
 
-      # Đây là đúng đường người dùng sẽ làm ở lần test cuối: package nằm trực tiếp bên trong
-      # <repo>/brains/<Brain mới>, chạy không truyền Brain path/Javis root, preview -> apply ->
-      # verify; checksum tamper phải fail trước mọi target write. Bắt buộc chạy cả Windows/Linux.
+      # Đây là đúng đường người dùng sẽ làm ở lần test cuối: ZIP nằm trong Brain mới, giải nén
+      # thành .brain-os-installer (ẩn khỏi scanner), chạy không truyền Brain path/Javis root,
+      # preview -> apply -> verify; checksum tamper phải fail trước mọi target write.
       - name: Portable ZIP inside fresh Brain E2E
         env:
           PYTHONIOENCODING: utf-8
@@ -147,7 +147,7 @@ jobs:
 
       - name: Inspect portable ZIP contract
         run: |
-          python -c "import json,zipfile; z=zipfile.ZipFile('dist/BrainOS-V1-Portable.zip'); names=set(z.namelist()); assert 'BrainOS-V1-Portable/install.py' in names; assert 'BrainOS-V1-Portable/manifest.json' in names; assert 'BrainOS-V1-Portable/checksums.sha256' in names; assert not any('/.javis/' in n or '/.claude/' in n for n in names); print('portable package contract ok')"
+          python -c "import zipfile; z=zipfile.ZipFile('dist/BrainOS-V1-Portable.zip'); names=set(z.namelist()); assert '.brain-os-installer/install.py' in names; assert '.brain-os-installer/manifest.json' in names; assert '.brain-os-installer/checksums.sha256' in names; assert '.brain-os-installer/payload/System/BrainOS/config.yml' in names; assert all(n.startswith('.brain-os-installer/') for n in names); assert not any('/.javis/' in n or '/.claude/' in n for n in names); print('hidden portable package contract ok')"
 
       - uses: actions/upload-artifact@v4
         with:
