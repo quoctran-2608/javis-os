@@ -5,21 +5,21 @@ The same file serves two layouts:
 
 1. Repository mode: ``<javis>/brain-os/install_brain_os.py`` with payload in
    ``<javis>/brain-os/template``.
-2. Portable package mode: ``<brain>/BrainOS-V1-Portable/install.py`` with payload in
+2. Portable package mode: ``<brain>/.brain-os-installer/install.py`` with payload in
    ``./payload``. In this mode the target Brain defaults to the package parent, so a user
-   can extract the package inside a fresh Brain and run ``python install.py``.
+   can extract the package inside a fresh Brain and run the installer there.
 
 Preview is the default. The installer copies only Brain-OS-owned payload, refuses every
 content conflict, deliberately leaves app-owned system-skill mirrors to Javis
 ``system_sync``, validates portable-package integrity when a manifest is present, and
-never deletes user files.
+never deletes user files. Runtime checks and system sync use Javis' own virtualenv Python
+when available, so launching this installer with a different system Python cannot silently
+switch dependency environments.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib
-import importlib.util
 import json
 import os
 import shutil
@@ -236,27 +236,47 @@ def verify_package_integrity(script_dir: Path, template: Path) -> dict:
         }
 
 
-def _load_system_sync(repo_root: Path):
-    server = repo_root / "server"
-    if str(server) not in sys.path:
-        sys.path.insert(0, str(server))
-    module = importlib.import_module("system_sync")
-    module_root = Path(module.__file__).resolve().parent.parent
-    if module_root != repo_root.resolve():
-        raise RuntimeError(
-            f"system_sync đang được import từ Javis root khác: {module_root}"
-        )
-    return module
-
-
 def sync_system_skills(repo_root: Path, target: Path) -> dict:
-    module = _load_system_sync(repo_root)
-    cache = getattr(module, "_SYNCED_ROOTS", None)
-    if isinstance(cache, set):
-        cache.discard(str(target.resolve()))
-    result = module.sync_brain(target)
+    """Run Javis system_sync inside Javis' runtime, not the launcher's Python.
+
+    A portable installer can legitimately be launched by a system Python while Javis itself
+    uses ``.venv``. Importing ``server/system_sync.py`` into the launcher would therefore
+    couple installation to the wrong dependency environment. This subprocess deliberately
+    uses the exact interpreter selected by ``runtime_python``.
+    """
+    python = runtime_python(repo_root)
+    code = (
+        "import json,sys; from pathlib import Path; "
+        "sys.path.insert(0, sys.argv[1]); import system_sync; "
+        "r=system_sync.sync_brain(Path(sys.argv[2])); "
+        "print(json.dumps(r, ensure_ascii=False))"
+    )
+    proc = subprocess.run(
+        [str(python), "-c", code, str(repo_root / "server"), str(target.resolve())],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or f"exit={proc.returncode}").strip()
+        raise RuntimeError(
+            f"Javis system_sync không chạy được bằng runtime {python}: {detail[:4000]}"
+        )
+    lines = [line.strip() for line in (proc.stdout or "").splitlines() if line.strip()]
+    if not lines:
+        raise RuntimeError("Javis system_sync không trả JSON")
+    try:
+        result = json.loads(lines[-1])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"Javis system_sync trả output không hợp lệ: {(proc.stdout or '')[-2000:]}"
+        ) from exc
     if not isinstance(result, dict) or not result.get("ok"):
         raise RuntimeError(f"Javis system_sync thất bại: {result!r}")
+    result["runtime_python"] = str(python)
     return result
 
 
@@ -364,9 +384,9 @@ def main() -> int:
             payload["installed"] = []
             payload["system_sync"] = None
             if args.apply:
-                # Validate the app-owned system layer first. It is safe before Brain OS config
-                # exists because these skills retain their legacy fallback until managed mode
-                # becomes active.
+                # Validate/apply the app-owned system layer first, using Javis' own runtime.
+                # It is safe before Brain OS config exists because these skills retain their
+                # legacy fallback until managed mode becomes active.
                 payload["system_sync"] = sync_system_skills(repo_root, target)
                 for src, rel in source_files(template):
                     dst = target / rel
