@@ -71,9 +71,7 @@ jobs:
           exit $status
 
       # Brain OS có regression suite riêng cho identity, scanner, taxonomy, import,
-      # Amplenote, documents, Javis bridge, recovery và pilot readiness. Từ đây suite
-      # này là một phần bắt buộc của CI chính để regression không thể xanh giả chỉ vì
-      # tests/python không thu thập brain-os/tests.
+      # Amplenote, documents, Javis bridge, recovery, pilot readiness và portable installer.
       - name: Chạy Brain OS regression tests
         env:
           PYTHONIOENCODING: utf-8
@@ -112,7 +110,48 @@ jobs:
           PYTHONIOENCODING: utf-8
         run: python -m pytest -q brain-os/tests/test_release_dropin_e2e.py
 
+      # Đây là đúng đường người dùng sẽ làm ở lần test cuối: package nằm trực tiếp bên trong
+      # <repo>/brains/<Brain mới>, chạy không truyền Brain path/Javis root, preview -> apply ->
+      # verify; checksum tamper phải fail trước mọi target write. Bắt buộc chạy cả Windows/Linux.
+      - name: Portable ZIP inside fresh Brain E2E
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python -m pytest -q brain-os/tests/test_portable_package.py
+
       - name: Cross-platform document regression
         env:
           PYTHONIOENCODING: utf-8
         run: python -m pytest -q brain-os/tests/test_stage10_documents.py
+
+  # Chỉ sinh artifact sau khi cả test tổng và 2 runner release-hardening đều xanh. Artifact này
+  # là package ứng viên; khi chốt HEAD cuối có thể lấy đúng ZIP của run đó để test trên Brain thật.
+  portable-package:
+    name: Build portable installer artifact
+    needs: [test, release-hardening]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build deterministic portable ZIP
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python brain-os/tools/build_portable_package.py \
+            --output-dir dist \
+            --source-sha "$SOURCE_SHA" \
+            --compact
+
+      - name: Inspect portable ZIP contract
+        run: |
+          python -c "import json,zipfile; z=zipfile.ZipFile('dist/BrainOS-V1-Portable.zip'); names=set(z.namelist()); assert 'BrainOS-V1-Portable/install.py' in names; assert 'BrainOS-V1-Portable/manifest.json' in names; assert 'BrainOS-V1-Portable/checksums.sha256' in names; assert not any('/.javis/' in n or '/.claude/' in n for n in names); print('portable package contract ok')"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brain-os-v1-portable
+          path: dist/BrainOS-V1-Portable.zip
+          if-no-files-found: error
+          retention-days: 14
