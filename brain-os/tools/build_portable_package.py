@@ -117,7 +117,8 @@ cài ở đúng các path do nó quản lý trong Brain.
 - `.javis/brain-index.db` hoặc recovery/runtime state;
 - Notes, sources, wiki hay dữ liệu người dùng/test;
 - `.claude` mirrors;
-- system skills do Javis `system_sync` sở hữu.
+- system skills do Javis `system_sync` sở hữu;
+- Python/runtime cache như `__pycache__`, `.pyc`, `.pyo` và tool cache tạm.
 
 Installer không overwrite file khác nội dung ở path Brain OS quản lý và không xoá file người dùng.
 """
@@ -204,6 +205,12 @@ def build(repo_root: Path, output_dir: Path, *, source_sha: str = "") -> dict:
             "skills/notes/**",
             "skills/query-wiki/**",
             "skills/lint-wiki/**",
+            "**/__pycache__/**",
+            "**/*.pyc",
+            "**/*.pyo",
+            "**/.pytest_cache/**",
+            "**/.mypy_cache/**",
+            "**/.ruff_cache/**",
         ],
     }
     manifest_path = package_dir / "manifest.json"
