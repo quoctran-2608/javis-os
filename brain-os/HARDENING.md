@@ -13,12 +13,13 @@ Brain OS V1 đã đóng Gate 0–10. Giai đoạn hardening không mở thêm fe
 | Safety | PASS within V1 scope | symlink/path traversal, malformed metadata, identity conflict, ZIP/document bounds, provenance/recovery tamper fail-closed |
 | Upgrade resilience | PASS for packaged extension | canonical + `.claude` governed skills must match; runtime scripts/contract/dependencies checked by pilot preflight |
 | Javis runtime integration | PASS | clean drop-in installer + `system_sync` + active-Brain bridge + governed ingest E2E pass on fresh Ubuntu and Windows runners; runtime dependency imports and document regressions also pass |
+| Portable distribution | PASS | deterministic ZIP is copied into a Brain created by Javis, extracted to hidden `.brain-os-installer/`, checksum-verified, previewed, applied and verified on Ubuntu + Windows; scanner ignores installer; runtime caches are excluded |
 | Observability | PASS | `brain_recovery.py audit` + `brain_pilot.py check` expose DB, identity, lifecycle, locks, jobs, compatibility and blockers |
-| Real-vault rollout tooling | PILOT-READY | cross-platform drop-in proof passed; initial pilot still requires per-vault backup, installer preview/apply, dry-run + Brain Watch disabled + recovery prepared |
+| Real-vault rollout tooling | PILOT-READY | cross-platform drop-in + portable-package proofs passed; initial pilot still requires per-vault backup, installer preview/apply, dry-run + Brain Watch disabled + recovery prepared |
 
 ## Release-hardening proof
 
-Release CI now contains a dedicated `release-hardening` matrix on both `ubuntu-latest` and `windows-latest`. Each runner starts from a clean checkout, installs the root runtime dependencies from scratch, verifies Brain OS runtime imports, then exercises the public installer and active-Brain integration path rather than copying the template directly.
+Release CI contains a dedicated `release-hardening` matrix on both `ubuntu-latest` and `windows-latest`. Each runner starts from a clean checkout, installs the root runtime dependencies from scratch, verifies Brain OS runtime imports, then exercises the public installer and active-Brain integration path rather than copying the template directly.
 
 The release E2E covers:
 
@@ -37,6 +38,21 @@ The release E2E covers:
 - cross-platform Stage 10 document regression;
 - actual runtime imports for `pypdf` and `yaml` after a clean dependency install.
 
+The portable-package E2E additionally models the intended fresh-install user workflow instead of an empty-folder approximation:
+
+1. Javis creates/scaffolds a new Brain using the same `_ensure_brain_scaffold` path as the Brain creation API.
+2. The package is built outside that Brain.
+3. Only `BrainOS-V1-Portable.zip` is copied into the new Brain.
+4. The ZIP is extracted there to `.brain-os-installer/`.
+5. The installer is launched from the extracted package without a Brain path or Javis-root argument; normal `<Javis>/brains/<Brain>` runtime discovery must succeed.
+6. Preview must report compatible runtime, valid package integrity and zero conflicts before Brain OS-owned files exist in the target.
+7. Apply must use the Javis runtime Python (preferring `.venv`), run `system_sync`, install only missing Brain OS-owned files, preserve pre-existing Javis/user content and run the read-only Brain OS `doctor` smoke check.
+8. While ZIP/package remain in the Brain, the real Brain OS scanner must prune `.brain-os-installer/` completely so package Markdown can never become user knowledge.
+9. `--verify` must re-check package checksums, installed file/system-skill contract and run read-only `doctor` successfully.
+10. A deliberately tampered payload must fail integrity validation before Brain OS target files are written.
+
+The CI then builds the deterministic ZIP only after the main suite and both release-hardening runners are green. The archive embeds the source commit in `manifest.json`/`RELEASE.md`, ships SHA-256 checksums and excludes derived/user/runtime material including `.javis/**`, `.claude/**`, Notes/sources/wiki, Javis-owned system-skill mirrors and Python/tool caches such as `__pycache__`, `.pyc/.pyo`, pytest/mypy/ruff caches.
+
 This CI proof establishes the packaged/runtime baseline. A real user vault is still a separate rollout event and must keep the backup + preview + pilot posture below; passing release CI is not permission to skip per-vault safety checks.
 
 ## Javis runtime integration contract
@@ -51,11 +67,46 @@ Hệ quả:
 - Brain không có `System/BrainOS/config.yml` thì bridge Brain OS fail-closed;
 - runtime Javis phải có bundled plugin `system/plugins/brain-os` và dependency Brain OS cần thiết, gồm `pypdf` trong root `requirements.txt`.
 
-## Cài vào một Brain Javis hiện hữu
+## Cài portable vào Brain mới — release workflow ưu tiên
+
+Đây là workflow dùng cho lần test sạch/real-vault rollout tiếp theo.
+
+1. Tạo Brain mới bằng Javis trước, ví dụ `MinhSecondBrain`; không tạo một thư mục rỗng thủ công để thay cho Javis scaffold.
+2. Lấy đúng artifact `BrainOS-V1-Portable.zip` được build từ final green HEAD.
+3. Copy **chỉ ZIP đó** vào root của Brain mới rồi giải nén tại chỗ. ZIP tạo thư mục ẩn `.brain-os-installer/`.
+4. Chạy preview trước:
+
+```bash
+python .brain-os-installer/install.py
+```
+
+Chỉ tiếp tục nếu output có `ok: true`, `runtime.compatible: true`, `package_integrity.ok: true` và `plan.conflicts: []`.
+
+5. Apply:
+
+```bash
+python .brain-os-installer/install.py --apply
+```
+
+6. Verify read-only:
+
+```bash
+python .brain-os-installer/install.py --verify
+```
+
+`--verify` kiểm installed contract và chạy Brain OS `doctor` bằng Python runtime của Javis; `doctor` là read-only và không khởi tạo DB nếu DB chưa tồn tại.
+
+7. Sau khi verify PASS, có thể xoá `BrainOS-V1-Portable.zip` và `.brain-os-installer/`. Brain OS đã nằm ở các path do nó quản lý trong Brain.
+
+Với Brain nằm ngoài `<Javis>/brains/`, truyền `--javis-root <path-Javis>` hoặc đặt `JAVIS_ROOT`. Normal local Brain dưới `<Javis>/brains/<name>` không cần tham số này.
+
+Package/installer không copy `.javis` state, không copy Notes/sources/wiki, không copy `.claude` mirrors, không copy runtime cache/bytecode và không overwrite file khác nội dung ở path Brain OS quản lý.
+
+## Cài trực tiếp từ Javis repository — operator/dev workflow
 
 Không copy nguyên thư mục `brain-os-v1/` vào Brain và không `cp -r` mù `brain-os/template/` lên dữ liệu hiện hữu.
 
-Từ **Javis repository root**, dùng installer:
+Từ **Javis repository root**, operator/dev vẫn có thể dùng installer nguồn:
 
 ```bash
 # Preview — không ghi target Brain
