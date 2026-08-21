@@ -78,3 +78,41 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: python -m pytest -q brain-os/tests
+
+  # Release proof phải bắt đầu từ runner sạch, cài đúng dependency runtime rồi dùng
+  # installer CLI thật. Chạy cả Linux và Windows vì Javis desktop/runtime thực tế có
+  # người dùng Windows; nhờ vậy lỗi path/encoding/subprocess không thể ẩn sau Ubuntu CI.
+  release-hardening:
+    name: Release hardening (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fresh install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+
+      - name: Verify Brain OS runtime dependencies import
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python -c "import pypdf, yaml; print('brain-os runtime dependencies import ok')"
+
+      - name: Clean drop-in installer + bridge + ingest E2E
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python -m pytest -q brain-os/tests/test_release_dropin_e2e.py
+
+      - name: Cross-platform document regression
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python -m pytest -q brain-os/tests/test_stage10_documents.py
