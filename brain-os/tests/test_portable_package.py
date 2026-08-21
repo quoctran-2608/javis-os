@@ -13,7 +13,14 @@ import pytest
 BRAIN_OS_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BRAIN_OS_ROOT.parent
 BUILDER = BRAIN_OS_ROOT / "tools" / "build_portable_package.py"
-PACKAGE_NAME = "BrainOS-V1-Portable"
+SCRIPTS = BRAIN_OS_ROOT / "template" / "skills" / "brain-manager" / "scripts"
+PACKAGE_DIR_NAME = ".brain-os-installer"
+ARCHIVE_NAME = "BrainOS-V1-Portable.zip"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from brain_os_lib.config import BrainOSConfig
+from brain_os_lib.scanner import collect_files
 
 
 def _run(cmd: list[str], *, cwd: Path) -> tuple[subprocess.CompletedProcess[str], dict]:
@@ -63,14 +70,19 @@ def test_portable_package_inside_fresh_brain_preview_apply_verify(tmp_path: Path
         assert build_proc.returncode == 0, build_proc.stderr or build_proc.stdout
         assert built["ok"] is True
         assert built["source_sha"] == "portable-e2e-source-sha"
+        assert built["package_directory"] == PACKAGE_DIR_NAME
 
-        package = brain / PACKAGE_NAME
-        zip_path = brain / f"{PACKAGE_NAME}.zip"
+        package = brain / PACKAGE_DIR_NAME
+        zip_path = brain / ARCHIVE_NAME
         assert package.is_dir()
         assert zip_path.is_file()
+        assert package.name.startswith(".")
         manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
         assert manifest["package_schema"] == 1
         assert manifest["source_sha"] == "portable-e2e-source-sha"
+        assert manifest["package_directory"] == PACKAGE_DIR_NAME
+        assert manifest["archive_name"] == ARCHIVE_NAME
+        assert manifest["scanner_hidden"] is True
         assert manifest["ownership"]["system_skills"] == "javis-system-sync"
         assert not (package / "payload" / ".javis").exists()
         assert not (package / "payload" / ".claude").exists()
@@ -80,15 +92,15 @@ def test_portable_package_inside_fresh_brain_preview_apply_verify(tmp_path: Path
 
         with zipfile.ZipFile(zip_path) as zf:
             names = set(zf.namelist())
-        assert f"{PACKAGE_NAME}/install.py" in names
-        assert f"{PACKAGE_NAME}/manifest.json" in names
-        assert f"{PACKAGE_NAME}/checksums.sha256" in names
-        assert f"{PACKAGE_NAME}/payload/System/BrainOS/config.yml" in names
-        assert not any(f"{PACKAGE_NAME}/payload/.javis/" in name for name in names)
-        assert not any(f"{PACKAGE_NAME}/payload/.claude/" in name for name in names)
+        assert f"{PACKAGE_DIR_NAME}/install.py" in names
+        assert f"{PACKAGE_DIR_NAME}/manifest.json" in names
+        assert f"{PACKAGE_DIR_NAME}/checksums.sha256" in names
+        assert f"{PACKAGE_DIR_NAME}/payload/System/BrainOS/config.yml" in names
+        assert not any(f"{PACKAGE_DIR_NAME}/payload/.javis/" in name for name in names)
+        assert not any(f"{PACKAGE_DIR_NAME}/payload/.claude/" in name for name in names)
 
-        # Run from inside the portable folder, not the Javis repo. No Brain path and no
-        # --javis-root are provided: target defaults to package parent and runtime discovery
+        # Run from inside the hidden portable folder, not the Javis repo. No Brain path and
+        # no --javis-root are provided: target defaults to package parent and runtime discovery
         # must recognize <repo>/brains/<brain>.
         preview_proc, preview = _run(
             [sys.executable, "install.py", "--compact"], cwd=package
@@ -121,6 +133,16 @@ def test_portable_package_inside_fresh_brain_preview_apply_verify(tmp_path: Path
             assert "javis_brain_os" in skill.read_text(encoding="utf-8")
         assert legacy.read_text(encoding="utf-8") == "# Existing user knowledge\n"
 
+        # Critical portable-package boundary: while the installer is still inside the Brain,
+        # the real scanner must prune the hidden directory and never index RELEASE.md or any
+        # Markdown under its payload as user knowledge.
+        config = BrainOSConfig.load(brain)
+        scan = collect_files(config, full_hash=True)
+        observed = [item.path for item in scan.observations]
+        assert not any(path.startswith(PACKAGE_DIR_NAME + "/") for path in observed)
+        assert scan.skipped_hidden >= 1
+        assert "Custom Area/Existing.md" in observed
+
         verify_proc, verified = _run(
             [sys.executable, "install.py", "--verify", "--compact"], cwd=package
         )
@@ -151,7 +173,7 @@ def test_portable_package_tamper_fails_before_target_write(tmp_path: Path):
         )
         assert build_proc.returncode == 0, build_proc.stderr or build_proc.stdout
         assert built["ok"] is True
-        package = brain / PACKAGE_NAME
+        package = brain / PACKAGE_DIR_NAME
         config = package / "payload" / "System" / "BrainOS" / "config.yml"
         config.write_text(config.read_text(encoding="utf-8") + "\n# tampered\n", encoding="utf-8")
 
