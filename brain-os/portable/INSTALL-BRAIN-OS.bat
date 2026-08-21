@@ -3,6 +3,13 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 title Brain OS V1 - Full Installer
 
+rem Force UTF-8 for this launcher and every Python child process. Windows can otherwise
+rem default redirected stdout to a legacy charmap (for example cp1252), which makes
+rem Brain OS doctor fail when its JSON contains Vietnamese characters.
+chcp 65001 >nul
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
+
 echo ============================================================
 echo   BRAIN OS V1 - FULL INSTALL
 echo ============================================================
