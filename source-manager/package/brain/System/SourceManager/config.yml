@@ -1,0 +1,17 @@
+schema_version: 1
+phase: 2
+semantic_write_enabled: false
+
+managed_roots:
+  - Notes
+  - sources
+  - Library
+
+source_watch:
+  enabled: false
+
+policy:
+  markdown_is_source_of_truth: true
+  sqlite_is_derived: true
+  ai_may_override_deterministic_evidence: false
+  legacy_sources_to_wiki_auto_ingest: false

@@ -1,0 +1,11 @@
+name: Source Manager
+slug: source-manager
+description: Deterministic Source Manager tools for Javis. Phase 2 is read-only: status, doctor, and file probe.
+version: 0.2.0
+author: MinhSecondBrain
+enabled: true
+min_mode: readonly
+tools:
+  - source_manager_status
+  - source_manager_doctor
+  - source_manager_probe_file
