@@ -29,6 +29,9 @@ from pathlib import Path
 
 SYSTEM_SKILLS = {"ingest-source", "notes", "query-wiki", "lint-wiki"}
 PACKAGE_SCHEMA = 1
+_RUNTIME_CACHE_DIRS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+_RUNTIME_CACHE_SUFFIXES = {".pyc", ".pyo"}
+_RUNTIME_JUNK_FILES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
 
 def sha(path: Path) -> str:
@@ -40,10 +43,19 @@ def source_files(template: Path):
 
     Javis owns canonical system skills and their ``.claude`` mirrors; those are always
     installed/updated by ``system_sync`` instead of being blindly copied from the package.
+    Runtime-generated caches/bytecode are never payload: importing Python from a source tree
+    may create ``__pycache__`` as a side effect, and packaging those files would make install
+    verification depend on the source machine/path.
     """
     for src in sorted(p for p in template.rglob("*") if p.is_file()):
         rel = src.relative_to(template)
         parts = rel.parts
+        if any(part in _RUNTIME_CACHE_DIRS for part in parts):
+            continue
+        if src.suffix.casefold() in _RUNTIME_CACHE_SUFFIXES:
+            continue
+        if src.name in _RUNTIME_JUNK_FILES:
+            continue
         if parts and parts[0] == ".claude":
             continue
         if len(parts) >= 3 and parts[0] == "skills" and parts[1] in SYSTEM_SKILLS:
