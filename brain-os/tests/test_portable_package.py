@@ -12,6 +12,7 @@ import pytest
 
 BRAIN_OS_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BRAIN_OS_ROOT.parent
+SERVER = REPO_ROOT / "server"
 BUILDER = BRAIN_OS_ROOT / "tools" / "build_portable_package.py"
 SCRIPTS = BRAIN_OS_ROOT / "template" / "skills" / "brain-manager" / "scripts"
 PACKAGE_DIR_NAME = ".brain-os-installer"
@@ -48,9 +49,30 @@ def _brain_under_real_javis(tmp_path: Path) -> Path:
     return brain
 
 
-def test_portable_package_inside_fresh_brain_preview_apply_verify(tmp_path: Path):
+def _scaffold_exactly_like_javis_new_brain(brain: Path) -> None:
+    """Call the same scaffold helper used by POST /brains/new.
+
+    Importing ``server.main`` does not run FastAPI startup; it only makes the helper available.
+    This catches collisions with a Brain genuinely created by Javis instead of proving only an
+    unrealistically empty directory.
+    """
+    if str(SERVER) not in sys.path:
+        sys.path.insert(0, str(SERVER))
+    import main as javis_main
+
+    javis_main._ensure_brain_scaffold(brain)
+
+
+def test_portable_package_inside_javis_created_brain_preview_apply_verify(tmp_path: Path):
     brain = _brain_under_real_javis(tmp_path)
     try:
+        _scaffold_exactly_like_javis_new_brain(brain)
+        javis_readme = brain / "Javis" / "README.md"
+        assert javis_readme.is_file()
+        javis_readme_before = javis_readme.read_bytes()
+
+        # A non-system user file makes preservation explicit even though the fresh Javis
+        # scaffold itself already contains normal Brain data.
         legacy = brain / "Custom Area" / "Existing.md"
         legacy.parent.mkdir(parents=True)
         legacy.write_text("# Existing user knowledge\n", encoding="utf-8")
@@ -117,6 +139,7 @@ def test_portable_package_inside_fresh_brain_preview_apply_verify(tmp_path: Path
         assert "System/BrainOS/config.yml" in preview["plan"]["copy"]
         assert not (brain / "System" / "BrainOS" / "config.yml").exists()
         assert legacy.read_text(encoding="utf-8") == "# Existing user knowledge\n"
+        assert javis_readme.read_bytes() == javis_readme_before
 
         apply_proc, applied = _run(
             [sys.executable, "install.py", "--apply", "--compact"], cwd=package
@@ -124,6 +147,7 @@ def test_portable_package_inside_fresh_brain_preview_apply_verify(tmp_path: Path
         assert apply_proc.returncode == 0, apply_proc.stderr or apply_proc.stdout
         assert applied["ok"] is True
         assert applied["system_sync"]["ok"] is True
+        assert applied["system_sync"]["runtime_python"] == applied["runtime"]["runtime_dependencies"]["python"]
         assert applied["installed_contract"]["ok"] is True
         assert (brain / "System" / "BrainOS" / "config.yml").is_file()
         assert (brain / "skills" / "brain-manager" / "scripts" / "brain_os.py").is_file()
@@ -132,6 +156,7 @@ def test_portable_package_inside_fresh_brain_preview_apply_verify(tmp_path: Path
             assert skill.is_file()
             assert "javis_brain_os" in skill.read_text(encoding="utf-8")
         assert legacy.read_text(encoding="utf-8") == "# Existing user knowledge\n"
+        assert javis_readme.read_bytes() == javis_readme_before
 
         # Critical portable-package boundary: while the installer is still inside the Brain,
         # the real scanner must prune the hidden directory and never index RELEASE.md or any
@@ -152,6 +177,7 @@ def test_portable_package_inside_fresh_brain_preview_apply_verify(tmp_path: Path
         assert verified["installed_contract"]["owned_payload"]["copy"] == []
         assert verified["installed_contract"]["owned_payload"]["conflicts"] == []
         assert legacy.read_text(encoding="utf-8") == "# Existing user knowledge\n"
+        assert javis_readme.read_bytes() == javis_readme_before
     finally:
         shutil.rmtree(brain, ignore_errors=True)
 
@@ -159,6 +185,7 @@ def test_portable_package_inside_fresh_brain_preview_apply_verify(tmp_path: Path
 def test_portable_package_tamper_fails_before_target_write(tmp_path: Path):
     brain = _brain_under_real_javis(tmp_path)
     try:
+        _scaffold_exactly_like_javis_new_brain(brain)
         build_proc, built = _run(
             [
                 sys.executable,
@@ -185,6 +212,5 @@ def test_portable_package_tamper_fails_before_target_write(tmp_path: Path):
         assert payload["package_integrity"]["ok"] is False
         assert "checksum" in payload["error"].casefold()
         assert not (brain / "System" / "BrainOS" / "config.yml").exists()
-        assert not (brain / ".javis").exists()
     finally:
         shutil.rmtree(brain, ignore_errors=True)
