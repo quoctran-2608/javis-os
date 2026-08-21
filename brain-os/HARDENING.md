@@ -12,9 +12,32 @@ Brain OS V1 đã đóng Gate 0–10. Giai đoạn hardening không mở thêm fe
 | Performance — large vault | PASS | 10k-note scanner proof: sparse scan reuses all unchanged hashes; one edit rehashes one file |
 | Safety | PASS within V1 scope | symlink/path traversal, malformed metadata, identity conflict, ZIP/document bounds, provenance/recovery tamper fail-closed |
 | Upgrade resilience | PASS for packaged extension | canonical + `.claude` governed skills must match; runtime scripts/contract/dependencies checked by pilot preflight |
-| Javis runtime integration | PROOF REQUIRED ON FINAL HEAD | active Brain phải lấy từ `ctx.vault_root`; governed skills dùng `javis_brain_os`; installer fail-closed khi runtime không tương thích hoặc target conflict |
+| Javis runtime integration | PASS | clean drop-in installer + `system_sync` + active-Brain bridge + governed ingest E2E pass on fresh Ubuntu and Windows runners; runtime dependency imports and document regressions also pass |
 | Observability | PASS | `brain_recovery.py audit` + `brain_pilot.py check` expose DB, identity, lifecycle, locks, jobs, compatibility and blockers |
-| Real-vault rollout tooling | READY AFTER DROP-IN PROOF | initial pilot requires installer preview/apply, dry-run + Brain Watch disabled + recovery prepared; actual user vault vẫn cần backup/pilot riêng |
+| Real-vault rollout tooling | PILOT-READY | cross-platform drop-in proof passed; initial pilot still requires per-vault backup, installer preview/apply, dry-run + Brain Watch disabled + recovery prepared |
+
+## Release-hardening proof
+
+Release CI now contains a dedicated `release-hardening` matrix on both `ubuntu-latest` and `windows-latest`. Each runner starts from a clean checkout, installs the root runtime dependencies from scratch, verifies Brain OS runtime imports, then exercises the public installer and active-Brain integration path rather than copying the template directly.
+
+The release E2E covers:
+
+- installer preview with zero writes and zero conflicts;
+- installer apply while preserving unrelated existing Brain content;
+- Javis `system_sync` materializing governed system skills;
+- `javis_brain_os` resolving the active Brain from `ctx.vault_root` while Javis cwd remains the repository root;
+- scan/index creation;
+- Living Note import through the bridge;
+- Brain-relative snapshot/working paths;
+- immutable snapshot bytes;
+- rename/re-import retaining the same stable `javis_id` and the same provenance snapshot;
+- no duplicate import manifest;
+- INGEST lifecycle checkpoint to `compounded` without rewriting user knowledge;
+- final scan after lifecycle update;
+- cross-platform Stage 10 document regression;
+- actual runtime imports for `pypdf` and `yaml` after a clean dependency install.
+
+This CI proof establishes the packaged/runtime baseline. A real user vault is still a separate rollout event and must keep the backup + preview + pilot posture below; passing release CI is not permission to skip per-vault safety checks.
 
 ## Javis runtime integration contract
 
