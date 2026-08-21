@@ -63,6 +63,47 @@ def _scaffold_exactly_like_javis_new_brain(brain: Path) -> None:
     javis_main._ensure_brain_scaffold(brain)
 
 
+def _build_copy_and_extract_zip(
+    brain: Path, tmp_path: Path, *, source_sha: str
+) -> tuple[dict, Path, Path, set[str]]:
+    """Model the user workflow exactly: build elsewhere, copy one ZIP, extract in Brain."""
+    dist = tmp_path / f"dist-{source_sha}"
+    dist.mkdir(parents=True, exist_ok=True)
+    build_proc, built = _run(
+        [
+            sys.executable,
+            str(BUILDER),
+            "--output-dir",
+            str(dist),
+            "--source-sha",
+            source_sha,
+            "--compact",
+        ],
+        cwd=REPO_ROOT,
+    )
+    assert build_proc.returncode == 0, build_proc.stderr or build_proc.stdout
+    assert built["ok"] is True
+    assert built["source_sha"] == source_sha
+    assert built["package_directory"] == PACKAGE_DIR_NAME
+
+    source_zip = dist / ARCHIVE_NAME
+    assert source_zip.is_file()
+    target_zip = brain / ARCHIVE_NAME
+    assert not target_zip.exists()
+    assert not (brain / PACKAGE_DIR_NAME).exists()
+    shutil.copy2(source_zip, target_zip)
+
+    with zipfile.ZipFile(target_zip) as zf:
+        names = set(zf.namelist())
+        assert names
+        assert all(name.startswith(PACKAGE_DIR_NAME + "/") for name in names)
+        zf.extractall(brain)
+
+    package = brain / PACKAGE_DIR_NAME
+    assert package.is_dir()
+    return built, package, target_zip, names
+
+
 def test_portable_package_inside_javis_created_brain_preview_apply_verify(tmp_path: Path):
     brain = _brain_under_real_javis(tmp_path)
     try:
@@ -77,28 +118,13 @@ def test_portable_package_inside_javis_created_brain_preview_apply_verify(tmp_pa
         legacy.parent.mkdir(parents=True)
         legacy.write_text("# Existing user knowledge\n", encoding="utf-8")
 
-        build_proc, built = _run(
-            [
-                sys.executable,
-                str(BUILDER),
-                "--output-dir",
-                str(brain),
-                "--source-sha",
-                "portable-e2e-source-sha",
-                "--compact",
-            ],
-            cwd=REPO_ROOT,
+        built, package, zip_path, names = _build_copy_and_extract_zip(
+            brain, tmp_path, source_sha="portable-e2e-source-sha"
         )
-        assert build_proc.returncode == 0, build_proc.stderr or build_proc.stdout
-        assert built["ok"] is True
-        assert built["source_sha"] == "portable-e2e-source-sha"
-        assert built["package_directory"] == PACKAGE_DIR_NAME
-
-        package = brain / PACKAGE_DIR_NAME
-        zip_path = brain / ARCHIVE_NAME
-        assert package.is_dir()
-        assert zip_path.is_file()
+        assert built["zip_path"] != str(zip_path)
+        assert zip_path.is_file()  # the only release artifact copied into the fresh Brain
         assert package.name.startswith(".")
+
         manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
         assert manifest["package_schema"] == 1
         assert manifest["source_sha"] == "portable-e2e-source-sha"
@@ -112,8 +138,6 @@ def test_portable_package_inside_javis_created_brain_preview_apply_verify(tmp_pa
         assert not (package / "payload" / "sources").exists()
         assert not (package / "payload" / "wiki").exists()
 
-        with zipfile.ZipFile(zip_path) as zf:
-            names = set(zf.namelist())
         assert f"{PACKAGE_DIR_NAME}/install.py" in names
         assert f"{PACKAGE_DIR_NAME}/manifest.json" in names
         assert f"{PACKAGE_DIR_NAME}/checksums.sha256" in names
@@ -121,9 +145,9 @@ def test_portable_package_inside_javis_created_brain_preview_apply_verify(tmp_pa
         assert not any(f"{PACKAGE_DIR_NAME}/payload/.javis/" in name for name in names)
         assert not any(f"{PACKAGE_DIR_NAME}/payload/.claude/" in name for name in names)
 
-        # Run from inside the hidden portable folder, not the Javis repo. No Brain path and
-        # no --javis-root are provided: target defaults to package parent and runtime discovery
-        # must recognize <repo>/brains/<brain>.
+        # Run from inside the extracted hidden portable folder, not the Javis repo. No Brain
+        # path and no --javis-root are provided: target defaults to package parent and runtime
+        # discovery must recognize <repo>/brains/<brain>.
         preview_proc, preview = _run(
             [sys.executable, "install.py", "--compact"], cwd=package
         )
@@ -158,9 +182,9 @@ def test_portable_package_inside_javis_created_brain_preview_apply_verify(tmp_pa
         assert legacy.read_text(encoding="utf-8") == "# Existing user knowledge\n"
         assert javis_readme.read_bytes() == javis_readme_before
 
-        # Critical portable-package boundary: while the installer is still inside the Brain,
+        # Critical portable-package boundary: while ZIP + installer are still inside the Brain,
         # the real scanner must prune the hidden directory and never index RELEASE.md or any
-        # Markdown under its payload as user knowledge.
+        # Markdown under its payload as user knowledge. The ZIP itself is not a scan extension.
         config = BrainOSConfig.load(brain)
         scan = collect_files(config, full_hash=True)
         observed = [item.path for item in scan.observations]
@@ -186,21 +210,9 @@ def test_portable_package_tamper_fails_before_target_write(tmp_path: Path):
     brain = _brain_under_real_javis(tmp_path)
     try:
         _scaffold_exactly_like_javis_new_brain(brain)
-        build_proc, built = _run(
-            [
-                sys.executable,
-                str(BUILDER),
-                "--output-dir",
-                str(brain),
-                "--source-sha",
-                "tamper-test-sha",
-                "--compact",
-            ],
-            cwd=REPO_ROOT,
+        _built, package, _zip_path, _names = _build_copy_and_extract_zip(
+            brain, tmp_path, source_sha="tamper-test-sha"
         )
-        assert build_proc.returncode == 0, build_proc.stderr or build_proc.stdout
-        assert built["ok"] is True
-        package = brain / PACKAGE_DIR_NAME
         config = package / "payload" / "System" / "BrainOS" / "config.yml"
         config.write_text(config.read_text(encoding="utf-8") + "\n# tampered\n", encoding="utf-8")
 
