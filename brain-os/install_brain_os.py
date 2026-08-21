@@ -12,9 +12,9 @@ The same file serves two layouts:
 Preview is the default. The installer copies only Brain-OS-owned payload, refuses every
 content conflict, deliberately leaves app-owned system-skill mirrors to Javis
 ``system_sync``, validates portable-package integrity when a manifest is present, and
-never deletes user files. Runtime checks and system sync use Javis' own virtualenv Python
-when available, so launching this installer with a different system Python cannot silently
-switch dependency environments.
+never deletes user files. Runtime checks, system sync, and the final read-only Brain OS
+``doctor`` smoke check use Javis' own virtualenv Python when available, so launching this
+installer with a different system Python cannot silently switch dependency environments.
 """
 from __future__ import annotations
 
@@ -236,14 +236,26 @@ def verify_package_integrity(script_dir: Path, template: Path) -> dict:
         }
 
 
-def sync_system_skills(repo_root: Path, target: Path) -> dict:
-    """Run Javis system_sync inside Javis' runtime, not the launcher's Python.
+def _json_from_subprocess(proc: subprocess.CompletedProcess[str], *, label: str) -> dict:
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or f"exit={proc.returncode}").strip()
+        raise RuntimeError(f"{label} thất bại: {detail[:4000]}")
+    lines = [line.strip() for line in (proc.stdout or "").splitlines() if line.strip()]
+    if not lines:
+        raise RuntimeError(f"{label} không trả JSON")
+    try:
+        result = json.loads(lines[-1])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"{label} trả output không hợp lệ: {(proc.stdout or '')[-2000:]}"
+        ) from exc
+    if not isinstance(result, dict):
+        raise RuntimeError(f"{label} JSON root không phải object")
+    return result
 
-    A portable installer can legitimately be launched by a system Python while Javis itself
-    uses ``.venv``. Importing ``server/system_sync.py`` into the launcher would therefore
-    couple installation to the wrong dependency environment. This subprocess deliberately
-    uses the exact interpreter selected by ``runtime_python``.
-    """
+
+def sync_system_skills(repo_root: Path, target: Path) -> dict:
+    """Run Javis system_sync inside Javis' runtime, not the launcher's Python."""
     python = runtime_python(repo_root)
     code = (
         "import json,sys; from pathlib import Path; "
@@ -260,23 +272,40 @@ def sync_system_skills(repo_root: Path, target: Path) -> dict:
         errors="replace",
         check=False,
     )
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or f"exit={proc.returncode}").strip()
-        raise RuntimeError(
-            f"Javis system_sync không chạy được bằng runtime {python}: {detail[:4000]}"
-        )
-    lines = [line.strip() for line in (proc.stdout or "").splitlines() if line.strip()]
-    if not lines:
-        raise RuntimeError("Javis system_sync không trả JSON")
-    try:
-        result = json.loads(lines[-1])
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            f"Javis system_sync trả output không hợp lệ: {(proc.stdout or '')[-2000:]}"
-        ) from exc
-    if not isinstance(result, dict) or not result.get("ok"):
+    result = _json_from_subprocess(proc, label=f"Javis system_sync bằng runtime {python}")
+    if not result.get("ok"):
         raise RuntimeError(f"Javis system_sync thất bại: {result!r}")
     result["runtime_python"] = str(python)
+    return result
+
+
+def run_brain_doctor(repo_root: Path, target: Path) -> dict:
+    """Execute the installed Brain OS doctor through Javis' runtime; doctor is read-only."""
+    script = target / "skills" / "brain-manager" / "scripts" / "brain_os.py"
+    if not script.is_file():
+        raise RuntimeError(f"Thiếu installed Brain OS doctor helper: {script}")
+    python = runtime_python(repo_root)
+    proc = subprocess.run(
+        [
+            str(python),
+            str(script),
+            "--brain-root",
+            str(target.resolve()),
+            "--compact",
+            "doctor",
+        ],
+        cwd=str(target),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    result = _json_from_subprocess(proc, label=f"Brain OS doctor bằng runtime {python}")
+    if not result.get("ok"):
+        raise RuntimeError(f"Brain OS doctor FAIL: {result!r}")
+    result["runtime_python"] = str(python)
+    result["read_only"] = True
     return result
 
 
@@ -326,7 +355,7 @@ def main() -> int:
         help="Target Brain root. Portable package may omit this when extracted inside the Brain.",
     )
     parser.add_argument("--apply", action="store_true", help="Apply only after all preflight checks pass")
-    parser.add_argument("--verify", action="store_true", help="Verify installed overlay + system-skill contract; never writes")
+    parser.add_argument("--verify", action="store_true", help="Verify installed overlay + run read-only Brain OS doctor")
     parser.add_argument("--javis-root", help="Explicit Javis repository root (needed for some external path: Brains)")
     parser.add_argument("--payload", help="Explicit Brain OS payload/template directory")
     parser.add_argument("--compact", action="store_true")
@@ -374,6 +403,7 @@ def main() -> int:
             payload["installed_contract"] = installed
             if not installed["ok"]:
                 raise RuntimeError("Brain OS installed contract chưa đạt")
+            payload["brain_doctor"] = run_brain_doctor(repo_root, target)
             payload["ok"] = True
         else:
             if p["conflicts"]:
@@ -399,6 +429,7 @@ def main() -> int:
                 payload["installed_contract"] = installed
                 if not installed["ok"]:
                     raise RuntimeError("Post-install contract verification FAIL")
+                payload["brain_doctor"] = run_brain_doctor(repo_root, target)
             payload["ok"] = True
     except Exception as exc:
         payload["error"] = f"{type(exc).__name__}: {exc}"
