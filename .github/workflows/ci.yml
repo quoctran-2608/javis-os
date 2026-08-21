@@ -113,10 +113,11 @@ jobs:
       # Mô phỏng đúng đường user: ZIP nằm trong Brain mới, giải nén ra root launcher + hidden
       # payload. Trên Windows suite còn gọi thật cmd.exe /c INSTALL-BRAIN-OS.bat và chứng minh
       # launcher tự chạy preview -> apply -> verify/doctor, fail-closed và giữ dữ liệu sẵn có.
+      # Test encoding riêng cố tình kế thừa cp1252/PYTHONUTF8=0 để tái hiện lỗi máy thật.
       - name: Portable ZIP + one-click installer E2E
         env:
           PYTHONIOENCODING: utf-8
-        run: python -m pytest -q brain-os/tests/test_portable_package.py
+        run: python -m pytest -q brain-os/tests/test_portable_package.py brain-os/tests/test_windows_launcher_encoding.py
 
       - name: Cross-platform document regression
         env:
