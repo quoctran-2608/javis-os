@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Build a deterministic Brain OS V1 portable installer ZIP.
 
-The resulting archive is named ``BrainOS-V1-Portable.zip`` but contains one hidden
-``.brain-os-installer`` directory. A user extracts that directory directly inside a
-fresh Brain and runs ``python .brain-os-installer/install.py``. The leading dot is a
-safety boundary: Brain OS has ``scan.ignore_hidden: true``, so the temporary installer
-and its Markdown documentation can never be mistaken for user knowledge while present.
+The resulting archive is named ``BrainOS-V1-Portable.zip`` and contains:
 
+- one root-level ``INSTALL-BRAIN-OS.bat`` for one-click Windows installation;
+- one hidden ``.brain-os-installer`` directory containing the verified installer payload.
+
+The hidden directory is a safety boundary: Brain OS has ``scan.ignore_hidden: true``, so
+temporary installer Markdown can never be mistaken for user knowledge while present.
 Only Brain-OS-owned overlay files are bundled; app-owned system skills/mirrors and all
 runtime/user-derived data are deliberately excluded.
 """
@@ -24,6 +25,7 @@ from pathlib import Path
 
 PACKAGE_DIR_NAME = ".brain-os-installer"
 ARCHIVE_NAME = "BrainOS-V1-Portable.zip"
+LAUNCHER_NAME = "INSTALL-BRAIN-OS.bat"
 PACKAGE_SCHEMA = 1
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 
@@ -74,43 +76,44 @@ def _release_text(source_sha: str, app_version: str) -> str:
 Source commit: `{source_sha}`
 Javis version at build: `{app_version or 'unknown'}`
 
-## Cách dùng cho Brain mới
+## Cách dùng cho Brain mới trên Windows
 
-Copy `{ARCHIVE_NAME}` vào Brain mới rồi giải nén tại đó. ZIP tạo ra thư mục ẩn
-`{PACKAGE_DIR_NAME}` trực tiếp bên trong Brain, ví dụ:
+Copy `{ARCHIVE_NAME}` vào Brain mới rồi giải nén ngay tại đó. ZIP tạo ra:
 
 ```text
 brains/MinhSecondBrain/
 ├── ... dữ liệu/scaffold Javis mới ...
 ├── {ARCHIVE_NAME}
+├── {LAUNCHER_NAME}
 └── {PACKAGE_DIR_NAME}/
 ```
+
+Sau đó chỉ cần double-click `{LAUNCHER_NAME}`. Launcher tự động chạy theo thứ tự an toàn:
+
+1. preview — chưa ghi Brain OS payload;
+2. apply — chỉ chạy nếu preview PASS;
+3. verify + doctor read-only — chỉ chạy nếu apply PASS.
+
+Nếu bất kỳ bước nào FAIL, launcher dừng ngay và không đánh dấu cài đặt thành công.
+Launcher ưu tiên Python trong Javis `.venv`; installer bên trong tiếp tục tự xác minh đúng
+Javis runtime, package checksum, conflict và post-install contract.
 
 Thư mục installer bắt đầu bằng dấu chấm có chủ ý để Brain OS scanner bỏ qua toàn bộ
 package trong lúc cài (`scan.ignore_hidden: true`).
 
-Sau đó chạy **preview trước** từ Brain root:
+## Cách chạy thủ công / hệ điều hành khác
+
+Từ Brain root:
 
 ```bash
 python {PACKAGE_DIR_NAME}/install.py
-```
-
-Nếu `ok: true`, `runtime.compatible: true`, `package_integrity.ok: true` và
-`plan.conflicts` rỗng thì mới apply:
-
-```bash
 python {PACKAGE_DIR_NAME}/install.py --apply
-```
-
-Cuối cùng verify read-only:
-
-```bash
 python {PACKAGE_DIR_NAME}/install.py --verify
 ```
 
-Nếu Brain nằm ngoài `<Javis>/brains/`, thêm `--javis-root <đường-dẫn-Javis>` cho cả ba lệnh.
-Sau khi verify PASS có thể xoá `{PACKAGE_DIR_NAME}` và `{ARCHIVE_NAME}`; Brain OS đã được
-cài ở đúng các path do nó quản lý trong Brain.
+Nếu Brain nằm ngoài `<Javis>/brains/`, thêm `--javis-root <đường-dẫn-Javis>` cho các lệnh
+thủ công. Sau khi verify PASS có thể xoá `{PACKAGE_DIR_NAME}`, `{LAUNCHER_NAME}` và
+`{ARCHIVE_NAME}`; Brain OS đã được cài ở đúng các path do nó quản lý trong Brain.
 
 ## Những gì package KHÔNG chứa
 
@@ -124,18 +127,29 @@ Installer không overwrite file khác nội dung ở path Brain OS quản lý v�
 """
 
 
-def _write_deterministic_zip(package_dir: Path, zip_path: Path) -> None:
+def _zip_write(zf: zipfile.ZipFile, path: Path, arcname: str) -> None:
+    info = zipfile.ZipInfo(arcname, FIXED_ZIP_TIME)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o644 << 16
+    zf.writestr(
+        info,
+        path.read_bytes(),
+        compress_type=zipfile.ZIP_DEFLATED,
+        compresslevel=9,
+    )
+
+
+def _write_deterministic_zip(
+    package_dir: Path, zip_path: Path, *, launcher_source: Path
+) -> None:
     if zip_path.exists():
         zip_path.unlink()
     root = package_dir.parent
     files = sorted(p for p in package_dir.rglob("*") if p.is_file())
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+        _zip_write(zf, launcher_source, LAUNCHER_NAME)
         for path in files:
-            arcname = path.relative_to(root).as_posix()
-            info = zipfile.ZipInfo(arcname, FIXED_ZIP_TIME)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o644 << 16
-            zf.writestr(info, path.read_bytes(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+            _zip_write(zf, path, path.relative_to(root).as_posix())
 
 
 def build(repo_root: Path, output_dir: Path, *, source_sha: str = "") -> dict:
@@ -143,9 +157,10 @@ def build(repo_root: Path, output_dir: Path, *, source_sha: str = "") -> dict:
     output_dir = output_dir.resolve()
     brain_os_root = repo_root / "brain-os"
     installer_path = brain_os_root / "install_brain_os.py"
+    launcher_source = brain_os_root / "portable" / LAUNCHER_NAME
     template = brain_os_root / "template"
-    if not installer_path.is_file() or not template.is_dir():
-        raise RuntimeError(f"Repo không có Brain OS source hợp lệ: {repo_root}")
+    if not installer_path.is_file() or not template.is_dir() or not launcher_source.is_file():
+        raise RuntimeError(f"Repo không có Brain OS portable source hợp lệ: {repo_root}")
 
     installer = _load_installer(installer_path)
     source_sha = _source_sha(repo_root, source_sha)
@@ -189,6 +204,13 @@ def build(repo_root: Path, output_dir: Path, *, source_sha: str = "") -> dict:
         "payload_file_count": len(payload_files),
         "payload_files": payload_files,
         "package_files": package_files,
+        "launchers": {
+            "windows": {
+                "path": LAUNCHER_NAME,
+                "sha256": sha256(launcher_source),
+                "flow": ["preview", "apply", "verify-doctor"],
+            }
+        },
         "ownership": {
             "payload": "brain-os",
             "system_skills": "javis-system-sync",
@@ -227,7 +249,7 @@ def build(repo_root: Path, output_dir: Path, *, source_sha: str = "") -> dict:
     )
 
     zip_path = output_dir / ARCHIVE_NAME
-    _write_deterministic_zip(package_dir, zip_path)
+    _write_deterministic_zip(package_dir, zip_path, launcher_source=launcher_source)
     return {
         "ok": True,
         "action": "build-brain-os-portable-package",
@@ -235,6 +257,7 @@ def build(repo_root: Path, output_dir: Path, *, source_sha: str = "") -> dict:
         "javis_version": app_version,
         "package_dir": str(package_dir),
         "package_directory": PACKAGE_DIR_NAME,
+        "launcher": LAUNCHER_NAME,
         "zip_path": str(zip_path),
         "zip_sha256": sha256(zip_path),
         "payload_file_count": len(payload_files),
