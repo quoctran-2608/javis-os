@@ -5,14 +5,15 @@ Chạy tay / CI:
     python tests/run.py source_manager_phase1
 
 Mục tiêu DUY NHẤT của Phase 1: chứng minh Javis upstream sạch đã có đủ extension point để
-Source Manager sống HOÀN TOÀN trong Brain, không cần sửa server/system/.claude/requirements.
+Source Manager không cần sửa server/system/.claude/requirements.
 
-Canary này dựng một Brain TẠM và kiểm đường chạy THẬT của ba contract:
+Canary dựng Brain + STATE_DIR TẠM và kiểm đường chạy THẬT của ba contract:
 1. Brain-local canonical skill `skills/ingest-source` thắng bản system + sống qua system_sync.
-2. Brain-local vault plugin `plugins/source-manager-canary` bị gate khi chưa opt-in, rồi được
-   nạp vào MCP hub + gọi được tool khi JAVIS_ENABLE_USER_PLUGINS=true.
+2. Plugin: chứng minh vault plugin KHÔNG phù hợp cross-engine (Claude cố ý scope_vault=False),
+   rồi chứng minh USER/GLOBAL plugin trong JAVIS_STATE_DIR/plugins chạy được cả đường Claude
+   in-process và MCP hub/Codex, trong khi ctx vẫn nhận đúng active Brain.
 3. Native loop `Javis/loops/source-watch-canary.md` được registry đọc, scheduler chọn và
-   run_due thực thi qua LoopFeature (engine được fake để test không gọi mạng/Claude).
+   run_due thực thi qua LoopFeature (chỉ fake engine để CI không gọi mạng/Claude).
 
 Nếu test này cần vá production code mới xanh thì Phase 1 phải coi là FAIL về kiến trúc.
 """
@@ -52,15 +53,16 @@ def atomic_write(path, text):
     tmp.replace(p)
 
 
+def tool_names(tools):
+    return {t.get("fn") for t in (tools or [])}
+
+
 _BRAIN = Path(tempfile.mkdtemp(prefix="javis-sm-p1-brain-"))
 
 
 # ============================================================================
 # 1) CANONICAL SKILL OVERRIDE + SYSTEM SYNC SURVIVAL
 # ============================================================================
-# Tiền đề thật: main hiện ship ingest-source dưới tầng system. sync_brain phải cài nó vào
-# canonical Brain trước; nếu upstream bỏ skill này trong tương lai thì override vẫn route được,
-# nhưng canary "sống qua system update" không còn đúng bài toán và phải được review lại.
 first_sync = system_sync.sync_brain(_BRAIN)
 _system_copy = _BRAIN / "skills" / "ingest-source" / "SKILL.md"
 check("skill tiền đề: system_sync cài ingest-source vào Brain canonical", _system_copy.is_file())
@@ -76,8 +78,8 @@ Nếu đọc được marker này thì Javis đang nạp canonical skill trong B
 """
 _system_copy.write_text(_CANARY_SKILL, encoding="utf-8", newline="\n")
 
-# Sync lại mô phỏng Javis update/system_sync. Contract bắt buộc: user-modified canonical skill
-# được giữ nguyên, không bị bản app ghi đè.
+# Sync lại mô phỏng system-sync sau một Javis update. Contract bắt buộc: canonical skill mà
+# user/Source Manager đã override phải được giữ, không bị bản app ghi đè.
 second_sync = system_sync.sync_brain(_BRAIN)
 check("skill update-resilience: sync nhận diện và giữ user override",
       "skills/ingest-source" in (second_sync.get("kept_user") or []))
@@ -90,104 +92,169 @@ check("skill router: resolve đúng <Brain>/skills/ingest-source/SKILL.md",
 meta = {x["slug"]: x for x in skill_router.list_skills(_BRAIN)}.get("ingest-source", {})
 check("skill router: canonical source='skills' thắng fallback", meta.get("source") == "skills")
 
-# Không chỉ gọi router helper: đi qua builtin tool mà engine API dùng thật.
+# Đi qua builtin tool mà engine API dùng thật, không chỉ gọi helper resolve.
 _builtin_tools, _builtin_route = mcp_hub._builtin_tools("full", str(_BRAIN))
 try:
     loaded_skill = asyncio.run(_builtin_route["javis_use_skill"]["call"]({"name": "ingest-source"}))
-except Exception as e:  # noqa: BLE001 - canary phải biến mọi lỗi đường thật thành FAIL rõ
+except Exception as e:  # noqa: BLE001
     loaded_skill = f"ERROR {type(e).__name__}: {e}"
 check("skill engine path: javis_use_skill nạp đúng marker Brain-local",
       "PHASE1_BRAIN_LOCAL_INGEST_OVERRIDE" in str(loaded_skill))
 
 
 # ============================================================================
-# 2) BRAIN-LOCAL VAULT PLUGIN -> PLUGIN HOST -> MCP HUB -> CALL
+# 2) PLUGIN CONTRACT: VAULT-ONLY IS NOT CROSS-ENGINE; GLOBAL USER PLUGIN IS
 # ============================================================================
-_pdir = _BRAIN / "plugins" / "source-manager-canary"
-_pdir.mkdir(parents=True, exist_ok=True)
-(_pdir / "plugin.yaml").write_text(
-    "name: Source Manager Phase 1 Canary\n"
-    "slug: source-manager-canary\n"
-    "description: Proves Brain-local plugin loading without patching Javis.\n"
+# Bật gate user plugin giống production sẽ cần. Đây là config opt-in, không phải patch code.
+os.environ["JAVIS_ENABLE_USER_PLUGINS"] = "true"
+
+# 2A. Canary vault plugin: có thể chạy qua hub khi scope_vault=True, NHƯNG Claude SDK upstream
+# cố ý gọi plugin_tools(..., scope_vault=False). Ta ghi nhận sự thật này thành regression guard
+# để không xây Source Manager ở sai ownership rồi phát hiện muộn như Brain OS cũ.
+_vault_pdir = _BRAIN / "plugins" / "phase1-vault-only"
+_vault_pdir.mkdir(parents=True, exist_ok=True)
+(_vault_pdir / "plugin.yaml").write_text(
+    "name: Phase 1 Vault Only\n"
+    "slug: phase1-vault-only\n"
+    "description: Negative canary proving vault plugins are not loaded by Claude scope_vault false.\n"
     "version: 0.0.1\n"
     "enabled: true\n"
     "min_mode: readonly\n",
     encoding="utf-8", newline="\n",
 )
-(_pdir / "plugin.py").write_text(
+(_vault_pdir / "plugin.py").write_text(
+    "def register(ctx):\n"
+    "    ctx.register_tool(\n"
+    "        name='phase1_vault_only_ping',\n"
+    "        description='Vault-only negative canary.',\n"
+    "        handler=lambda args, runtime_ctx: 'PHASE1_VAULT_ONLY',\n"
+    "        schema={'type': 'object', 'properties': {}},\n"
+    "        min_mode='readonly',\n"
+    "    )\n",
+    encoding="utf-8", newline="\n",
+)
+plugins_host.invalidate()
+_vault_scoped, _ = plugins_host.plugin_tools("full", str(_BRAIN), scope_vault=True)
+_claude_scoped_before, _ = plugins_host.plugin_tools("full", str(_BRAIN), scope_vault=False)
+check("plugin architecture: vault plugin nạp được khi scope_vault=True",
+      "phase1_vault_only_ping" in tool_names(_vault_scoped))
+check("plugin architecture: vault plugin KHÔNG nạp ở Claude scope_vault=False",
+      "phase1_vault_only_ping" not in tool_names(_claude_scoped_before))
+
+# 2B. Source Manager cross-engine canary phải là USER/GLOBAL plugin. Nguồn chính thức của nó là
+# JAVIS_STATE_DIR/plugins (plugins_host.GLOBAL_DIR), không nằm trong code tree Javis.
+_global_pdir = Path(plugins_host.GLOBAL_DIR) / "source-manager-canary"
+_global_pdir.mkdir(parents=True, exist_ok=True)
+(_global_pdir / "plugin.yaml").write_text(
+    "name: Source Manager Phase 1 Canary\n"
+    "slug: source-manager-canary\n"
+    "description: Cross-engine Source Manager canary installed in persistent Javis user state.\n"
+    "version: 0.0.1\n"
+    "enabled: true\n"
+    "min_mode: readonly\n",
+    encoding="utf-8", newline="\n",
+)
+(_global_pdir / "plugin.py").write_text(
     "import json\n\n"
     "def register(ctx):\n"
     "    def _ping(args, runtime_ctx):\n"
     "        return json.dumps({\n"
     "            'ok': True,\n"
-    "            'marker': 'PHASE1_VAULT_PLUGIN_EXECUTED',\n"
+    "            'marker': 'PHASE1_GLOBAL_PLUGIN_EXECUTED',\n"
     "            'vault_root': runtime_ctx.vault_root,\n"
+    "            'source': runtime_ctx.source,\n"
     "        }, ensure_ascii=False)\n"
     "    ctx.register_tool(\n"
     "        name='source_manager_phase1_ping',\n"
-    "        description='Phase 1 canary ping for Brain-local Source Manager plugin.',\n"
+    "        description='Phase 1 cross-engine canary ping for Source Manager.',\n"
     "        handler=_ping,\n"
     "        schema={'type': 'object', 'properties': {}},\n"
     "        min_mode='readonly',\n"
     "    )\n",
     encoding="utf-8", newline="\n",
 )
-
-# Gate OFF: plugin có manifest nhưng Python KHÔNG được thực thi.
-os.environ.pop("JAVIS_ENABLE_USER_PLUGINS", None)
-os.environ.pop("JAVIS_ENABLE_VAULT_PLUGINS", None)
 plugins_host.invalidate()
 mcp_hub.invalidate_cache()
-_desc_off = {x["slug"]: x for x in plugins_host.describe(str(_BRAIN))}
-check("plugin safety: vault plugin được phát hiện nhưng gated khi chưa opt-in",
-      _desc_off.get("source-manager-canary", {}).get("gated") is True)
-_tools_off, _route_off = asyncio.run(mcp_hub.discover_all(
-    "full", vault_root=str(_BRAIN), include_plugins=True, force_refresh=True))
-_inv_tools_off, _inv_route_off = mcp_hub.registry_inventory(
-    "full", str(_BRAIN), include_plugins=True, include_ambient=False, force_lazy=False)
-check("plugin safety: tool không lọt vào MCP hub khi gate OFF",
-      "source_manager_phase1_ping" not in _inv_route_off)
 
-# Gate ON: dùng tên env mới được upstream khuyến nghị. Invalidate cả plugin cache + hub cache.
+# Đây chính là scope mà ClaudeSDK._plugins_server() đang dùng. Nếu canary không có ở đây,
+# Source Manager sẽ không dùng được với Claude dù Codex/hub có thể thấy nó.
+_claude_tools, _claude_route = plugins_host.plugin_tools(
+    "full", str(_BRAIN), scope_vault=False)
+check("plugin Claude path: global Source Manager tool có mặt với scope_vault=False",
+      "source_manager_phase1_ping" in tool_names(_claude_tools))
+
+_global_result = ""
+try:
+    _global_result = asyncio.run(_claude_route["source_manager_phase1_ping"]["call"]({}))
+except Exception as e:  # noqa: BLE001
+    _global_result = f"ERROR {type(e).__name__}: {e}"
+try:
+    _global_json = json.loads(_global_result)
+except Exception:
+    _global_json = {}
+check("plugin Claude path: handler global thực sự chạy",
+      _global_json.get("marker") == "PHASE1_GLOBAL_PLUGIN_EXECUTED")
+check("plugin Claude path: global PluginContext vẫn nhận đúng active Brain",
+      Path(str(_global_json.get("vault_root") or "")).resolve() == _BRAIN.resolve())
+check("plugin Claude path: plugin source đúng là user/global",
+      _global_json.get("source") == "user")
+
+# Gate OFF phải fail-closed cho user/global Python plugin.
+os.environ.pop("JAVIS_ENABLE_USER_PLUGINS", None)
+plugins_host.invalidate()
+_gate_off_tools, _ = plugins_host.plugin_tools("full", str(_BRAIN), scope_vault=False)
+_desc_off = {x["slug"]: x for x in plugins_host.describe(str(_BRAIN))}
+check("plugin safety: global plugin bị chặn khi opt-in env bị tắt",
+      "source_manager_phase1_ping" not in tool_names(_gate_off_tools))
+check("plugin safety: metadata báo gated thay vì âm thầm coi là loaded",
+      _desc_off.get("source-manager-canary", {}).get("gated") is True)
+
+# Bật lại để chứng minh đường MCP hub / Codex. HTTP hub có lazy-tool layer, nên probe phải tôn
+# trọng protocol thật: nếu tool visible thì gọi thẳng; nếu bị lazy thì search -> run.
 os.environ["JAVIS_ENABLE_USER_PLUGINS"] = "true"
 plugins_host.invalidate()
 mcp_hub.invalidate_cache()
-_tools_on, _route_on = asyncio.run(mcp_hub.discover_all(
-    "full", vault_root=str(_BRAIN), include_plugins=True, force_refresh=True))
-_inv_tools_on, _inv_route_on = mcp_hub.registry_inventory(
-    "full", str(_BRAIN), include_plugins=True, include_ambient=False, force_lazy=False)
-check("plugin hub: Brain-local tool xuất hiện trong pre-lazy inventory của MCP hub",
-      "source_manager_phase1_ping" in _inv_route_on)
 
-_plugin_result = ""
-try:
-    _plugin_result = asyncio.run(_inv_route_on["source_manager_phase1_ping"]["call"]({}))
-except Exception as e:  # noqa: BLE001
-    _plugin_result = f"ERROR {type(e).__name__}: {e}"
-try:
-    _plugin_json = json.loads(_plugin_result)
-except Exception:
-    _plugin_json = {}
-check("plugin call: handler Python trong Brain thực sự được thực thi",
-      _plugin_json.get("marker") == "PHASE1_VAULT_PLUGIN_EXECUTED")
-check("plugin call: PluginContext nhận đúng Brain đang active",
-      Path(str(_plugin_json.get("vault_root") or "")).resolve() == _BRAIN.resolve())
 
-# Chứng minh đường HTTP/Codex dùng cùng hub dispatcher, không chỉ gọi plugin host riêng.
-_http_list = asyncio.run(mcp_hub._handle_one(
-    {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
-    "full", include_plugins=True, include_ambient=False, vault_root=str(_BRAIN)))
-_http_names = {t.get("name") for t in ((_http_list.get("result") or {}).get("tools") or [])}
-# Nếu lazy đang bật thì canary có thể nằm sau javis_search_tools, nên tools/list không bắt buộc
-# phơi trực tiếp. Inventory ở trên mới là source of truth; HTTP call dưới đây gọi dispatcher
-# theo đúng tên và sẽ chứng minh route thực tế.
-_http_call = asyncio.run(mcp_hub._handle_one(
-    {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-     "params": {"name": "source_manager_phase1_ping", "arguments": {}}},
-    "full", include_plugins=True, include_ambient=False, vault_root=str(_BRAIN)))
-_http_text = str((((_http_call.get("result") or {}).get("content") or [{}])[0]).get("text") or "")
-check("plugin HTTP hub: tools/call thực thi được vault plugin cho Codex/HTTP engine path",
-      "PHASE1_VAULT_PLUGIN_EXECUTED" in _http_text)
+async def _probe_http_plugin():
+    listed = await mcp_hub._handle_one(
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+        "full", include_plugins=True, include_ambient=False, vault_root=str(_BRAIN))
+    names = {t.get("name") for t in ((listed.get("result") or {}).get("tools") or [])}
+
+    if "source_manager_phase1_ping" in names:
+        called = await mcp_hub._handle_one(
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+             "params": {"name": "source_manager_phase1_ping", "arguments": {}}},
+            "full", include_plugins=True, include_ambient=False, vault_root=str(_BRAIN))
+        text = str((((called.get("result") or {}).get("content") or [{}])[0]).get("text") or "")
+        return {"path": "direct", "names": names, "text": text, "search_text": ""}
+
+    # Lazy mode: model phải tìm schema trước rồi dispatch bằng javis_run_tool.
+    if not {"javis_search_tools", "javis_run_tool"}.issubset(names):
+        return {"path": "missing", "names": names, "text": "", "search_text": ""}
+    searched = await mcp_hub._handle_one(
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+         "params": {"name": "javis_search_tools",
+                    "arguments": {"query": "source manager phase1 ping"}}},
+        "full", include_plugins=True, include_ambient=False, vault_root=str(_BRAIN))
+    search_text = str((((searched.get("result") or {}).get("content") or [{}])[0]).get("text") or "")
+    if "source_manager_phase1_ping" not in search_text:
+        return {"path": "lazy-search-miss", "names": names, "text": "", "search_text": search_text}
+    called = await mcp_hub._handle_one(
+        {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+         "params": {"name": "javis_run_tool",
+                    "arguments": {"name": "source_manager_phase1_ping", "args": {}}}},
+        "full", include_plugins=True, include_ambient=False, vault_root=str(_BRAIN))
+    text = str((((called.get("result") or {}).get("content") or [{}])[0]).get("text") or "")
+    return {"path": "lazy", "names": names, "text": text, "search_text": search_text}
+
+
+_http_probe = asyncio.run(_probe_http_plugin())
+check("plugin HTTP/Codex path: hub expose direct tool hoặc đúng lazy search/run protocol",
+      _http_probe.get("path") in ("direct", "lazy"))
+check("plugin HTTP/Codex path: dispatcher thực thi global Source Manager tool",
+      "PHASE1_GLOBAL_PLUGIN_EXECUTED" in _http_probe.get("text", ""))
 
 
 # ============================================================================
@@ -281,7 +348,6 @@ check("loop log: native runner ghi log trong chính Brain", bool(_log_files))
 # ============================================================================
 # PHASE 1 VERDICT
 # ============================================================================
-# Dọn env canary để không ảnh hưởng module khác nếu file này được import trong một runner khác.
 os.environ.pop("JAVIS_ENABLE_USER_PLUGINS", None)
 plugins_host.invalidate()
 mcp_hub.invalidate_cache()
@@ -291,4 +357,4 @@ if _fails:
     sys.exit(1)
 
 print("\nOK - SOURCE MANAGER PHASE 1 EXTENSION POINTS VERIFIED")
-print("Verified: Brain skill override + vault plugin/MCP hub + native registered loop execution")
+print("Verified: Brain skill override + global user plugin cross-engine + native registered loop execution")
