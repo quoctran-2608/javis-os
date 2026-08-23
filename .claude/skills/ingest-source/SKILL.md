@@ -73,41 +73,10 @@ Markdown đã tiêu hoá phải được Javis quản lý bằng canonical hash 
 - Tool này ghi `javis_managed: true` và `javis_last_ingested_hash`. Hash loại trừ metadata vận hành `javis_*` cùng các field ingestion do Javis tự ghi, nên chính việc đánh dấu không được làm file tự báo changed.
 - TUYỆT ĐỐI không mark trước khi Wiki/source update thành công. Nếu ingest lỗi giữa chừng, để hash cũ để vòng sau retry.
 - Không tự tính SHA bằng suy đoán/LLM; luôn dùng tool deterministic.
-
-### Vòng refresh chuẩn trong Brain
-
-Sau lần đầu quản lý Markdown, bảo đảm Brain có đúng **một** file `Javis/loops/second-brain-refresh.md`. Nếu đã tồn tại thì giữ nguyên cấu hình người dùng; không tạo bản song song. Nếu chưa có thì tạo file sau:
-
-```yaml
----
-type: loop
-name: Second Brain Refresh
-slug: second-brain-refresh
-enabled: true
-goal: custom
-mode: auto
-interval_min: 15
-workspace: vault
-tools_profile: vault-safe
-quiet_hours: ""
-max_runs_per_day: 0
-owner_chat: ""
-notify: false
-precheck: managed-markdown
-source_roots: []
----
-```
-
-Thân loop:
-
-```text
-Đây là vòng làm mới Second Brain sau khi người dùng sửa Markdown trong Obsidian.
-Scheduler đã chạy precheck deterministic TRƯỚC khi gọi AI. Chỉ xử lý các đường dẫn được chèn trong khối JAVIS_CHANGED_MANAGED_NOTES; không quét lại cả vault bằng AI.
-Với từng file trong danh sách: re-ingest bằng skill ingest-source, giữ folder ổn định trừ khi vị trí rõ ràng sai. Chỉ sau khi source + Wiki cập nhật thành công mới gọi javis_managed_notes_mark cho đường dẫn cuối cùng.
-Nếu một file lỗi, báo rõ file đó và không mark nó để lần sau retry.
-```
-
-`source_roots: []` nghĩa là dùng các source roots chuẩn đang tồn tại của Javis; người dùng có thể ghi danh sách đường dẫn tương đối để giới hạn/chọn thêm root. Scheduler precheck phải dừng trước AI nếu không có Markdown managed nào thay đổi.
+- Sau lần mark thành công đầu tiên, gọi `javis_managed_notes_setup`. Tool này bảo đảm Brain hiện tại có đúng một `Javis/loops/second-brain-refresh.md`, mặc định chạy mỗi 15 phút, `mode: auto`, `notify: false`, `precheck: managed-markdown`, đồng thời đăng ký Brain với scheduler native.
+- Nếu loop refresh đã tồn tại, setup KHÔNG được ghi đè cấu hình người dùng hoặc tạo bản song song.
+- Scheduler chạy canonical precheck TRƯỚC khi khởi động model. Không có note đổi -> chỉ cập nhật mốc scheduler và STOP, zero AI. Có note đổi -> prompt vòng refresh nhận đúng danh sách `JAVIS_CHANGED_MANAGED_NOTES` và chỉ re-ingest các file đó.
+- `source_roots: []` trong loop nghĩa là dùng các source roots chuẩn đang tồn tại của Javis; người dùng có thể cấu hình danh sách đường dẫn tương đối để giới hạn/chọn root cụ thể.
 
 ## Các bước
 1. Đọc source (kèm ảnh nếu có).
@@ -124,5 +93,5 @@ Nếu một file lỗi, báo rõ file đó và không mark nó để lần sau r
 6. Cập nhật `wiki/index.md` (thêm dòng link + mô tả 1 dòng).
 7. Set source `status: processed`, `processed_at`, `wiki_links: [...]`. Không đáng vào wiki -> `status: skipped` + `note`.
 8. Append `wiki/log.md`: `## [YYYY-MM-DD] ingest | <tên source>` + nguồn/đã tạo/đã cập nhật/insight.
-9. Nếu là Markdown managed và các bước trên thành công: gọi `javis_managed_notes_mark` cho đường dẫn source cuối cùng; bảo đảm loop `second-brain-refresh.md` tồn tại theo mục trên.
+9. Nếu là Markdown managed và các bước trên thành công: gọi `javis_managed_notes_mark` cho đường dẫn source cuối cùng, sau đó gọi `javis_managed_notes_setup` để bảo đảm refresh loop tồn tại/được đăng ký.
 10. Đề xuất task nếu source mở ra hành động (chỉ đề xuất). Báo cáo ngắn: vị trí source cuối cùng + tags + tóm tắt + trang wiki đã chạm + insight + task.
