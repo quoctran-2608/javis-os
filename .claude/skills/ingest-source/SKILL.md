@@ -18,7 +18,10 @@ Skill làm theo đúng 3 kỷ luật của vault, đồng thời tổ chức sou
 Đọc schema vault (`CLAUDE.md`/`AGENTS.md` ở gốc brain) trước; đây là bản thao tác của phép INGEST.
 
 ## Trước khi làm
-- Kiểm frontmatter source: `status: processed` -> DỪNG, báo đã xử lý, hỏi có re-ingest không. `unprocessed`/chưa có -> làm.
+- Kiểm frontmatter source:
+  - `status: processed` và đây là yêu cầu ingest bình thường -> DỪNG, báo đã xử lý, hỏi có re-ingest không.
+  - `status: processed` nhưng tác vụ hiện tại được vòng **Second Brain Refresh** gọi với source nằm trong danh sách `JAVIS_CHANGED_MANAGED_NOTES` -> ĐƯỢC re-ingest, vì canonical hash deterministic đã xác nhận nội dung người dùng thực sự thay đổi.
+  - `unprocessed`/chưa có -> làm.
 - Phân loại độ dài. Source dài (>= ~10.000 dòng / sách / transcript) -> BẮT BUỘC 3-pass:
   1. Đọc lướt, lập mục lục theo số dòng (vd "1-1300: giới thiệu"). Báo người dùng xác nhận trọng tâm.
   2. Đọc sâu từng đoạn ~1.000-1.500 dòng, viết wiki NGAY từng đoạn (đừng nén cả file 1 lần - mất 25-40% chi tiết).
@@ -62,6 +65,50 @@ cây `sources/` + một số hashtag liên quan; đây là lớp tổ chức cho
 - Chỉ tự move khi vị trí hiện tại rõ ràng sai hoặc người dùng yêu cầu tái tổ chức. Trường hợp chỉ là cải tiến taxonomy, đề xuất cho người dùng duyệt thay vì mass-move.
 - Không tự đổi tên/gộp/xoá hàng loạt folder hoặc tag trong lúc ingest một source.
 
+## Managed Markdown: hash và tự làm mới sau khi Obsidian sửa
+
+Markdown đã tiêu hoá phải được Javis quản lý bằng canonical hash deterministic, không dùng AI để quyết định file có đổi hay không.
+
+- Sau khi TOÀN BỘ ingest của một Markdown thành công (source metadata + Wiki + index + log đã ghi xong), gọi tool `javis_managed_notes_mark` với **đường dẫn cuối cùng** của source.
+- Tool này ghi `javis_managed: true` và `javis_last_ingested_hash`. Hash loại trừ metadata vận hành `javis_*` cùng các field ingestion do Javis tự ghi, nên chính việc đánh dấu không được làm file tự báo changed.
+- TUYỆT ĐỐI không mark trước khi Wiki/source update thành công. Nếu ingest lỗi giữa chừng, để hash cũ để vòng sau retry.
+- Không tự tính SHA bằng suy đoán/LLM; luôn dùng tool deterministic.
+
+### Vòng refresh chuẩn trong Brain
+
+Sau lần đầu quản lý Markdown, bảo đảm Brain có đúng **một** file `Javis/loops/second-brain-refresh.md`. Nếu đã tồn tại thì giữ nguyên cấu hình người dùng; không tạo bản song song. Nếu chưa có thì tạo file sau:
+
+```yaml
+---
+type: loop
+name: Second Brain Refresh
+slug: second-brain-refresh
+enabled: true
+goal: custom
+mode: auto
+interval_min: 15
+workspace: vault
+tools_profile: vault-safe
+quiet_hours: ""
+max_runs_per_day: 0
+owner_chat: ""
+notify: false
+precheck: managed-markdown
+source_roots: []
+---
+```
+
+Thân loop:
+
+```text
+Đây là vòng làm mới Second Brain sau khi người dùng sửa Markdown trong Obsidian.
+Scheduler đã chạy precheck deterministic TRƯỚC khi gọi AI. Chỉ xử lý các đường dẫn được chèn trong khối JAVIS_CHANGED_MANAGED_NOTES; không quét lại cả vault bằng AI.
+Với từng file trong danh sách: re-ingest bằng skill ingest-source, giữ folder ổn định trừ khi vị trí rõ ràng sai. Chỉ sau khi source + Wiki cập nhật thành công mới gọi javis_managed_notes_mark cho đường dẫn cuối cùng.
+Nếu một file lỗi, báo rõ file đó và không mark nó để lần sau retry.
+```
+
+`source_roots: []` nghĩa là dùng các source roots chuẩn đang tồn tại của Javis; người dùng có thể ghi danh sách đường dẫn tương đối để giới hạn/chọn thêm root. Scheduler precheck phải dừng trước AI nếu không có Markdown managed nào thay đổi.
+
 ## Các bước
 1. Đọc source (kèm ảnh nếu có).
 2. Nếu là Markdown người dùng cần quản lý trong Second Brain: áp dụng đầy đủ **Kỷ luật tổ chức source trước khi tiêu hoá**; sau bước này dùng tên/vị trí source cuối cùng cho toàn bộ phần còn lại.
@@ -77,4 +124,5 @@ cây `sources/` + một số hashtag liên quan; đây là lớp tổ chức cho
 6. Cập nhật `wiki/index.md` (thêm dòng link + mô tả 1 dòng).
 7. Set source `status: processed`, `processed_at`, `wiki_links: [...]`. Không đáng vào wiki -> `status: skipped` + `note`.
 8. Append `wiki/log.md`: `## [YYYY-MM-DD] ingest | <tên source>` + nguồn/đã tạo/đã cập nhật/insight.
-9. Đề xuất task nếu source mở ra hành động (chỉ đề xuất). Báo cáo ngắn: vị trí source cuối cùng + tags + tóm tắt + trang wiki đã chạm + insight + task.
+9. Nếu là Markdown managed và các bước trên thành công: gọi `javis_managed_notes_mark` cho đường dẫn source cuối cùng; bảo đảm loop `second-brain-refresh.md` tồn tại theo mục trên.
+10. Đề xuất task nếu source mở ra hành động (chỉ đề xuất). Báo cáo ngắn: vị trí source cuối cùng + tags + tóm tắt + trang wiki đã chạm + insight + task.
