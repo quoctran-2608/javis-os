@@ -65,6 +65,7 @@ from fastapi import APIRouter, Form, Query
 from claude_cli import claude_engine, cancel_all, _empty_mcp_file
 import aux_engine   # engine viec nen theo model phu nguoi dung chon
 import channel_context   # bóc khối JAVIS_* trước khi báo Telegram - kênh chữ, không phải web
+import managed_markdown  # precheck deterministic cho Second Brain trước khi khởi động model
 
 LEGACY_SLUG = "vong-lap-goc"
 # Dấu "đã migrate loop_config.json" ghi thẳng vào chính file đó. Có dấu này thì KHÔNG dựng lại
@@ -296,6 +297,18 @@ class LoopFeature:
         # như thời engine Popen cũ. MẶC ĐỊNH TẮT - bản fork sạch, không lộ kết nối của ai. Chỉ bật
         # khi ghi rõ true. Bật = loop chạy nhánh không-gated (nạp cấu hình máy), vẫn chặn Bash/Web/Task.
         ambient_mcp = str(fm.get("ambient_mcp", False)).strip().lower() in ("true", "1", "yes", "on")
+        # Chỉ một precheck được hỗ trợ ở lớp scheduler hiện tại. Field lạ bị bỏ qua để loop thường
+        # giữ nguyên hành vi và không biến frontmatter thành API thực thi tuỳ ý.
+        precheck = str(fm.get("precheck", "") or "").strip().lower()
+        if precheck != "managed-markdown":
+            precheck = ""
+        raw_roots = fm.get("source_roots", [])
+        if isinstance(raw_roots, (list, tuple)):
+            source_roots = [str(x).strip() for x in raw_roots if str(x).strip()]
+        elif raw_roots:
+            source_roots = [str(raw_roots).strip()]
+        else:
+            source_roots = []
         return {
             # identity = TÊN FILE (stem) - frontmatter slug chỉ để hiển thị, tránh lệch nhau
             "slug": stem,
@@ -310,6 +323,8 @@ class LoopFeature:
             "owner_chat": str(fm.get("owner_chat", "") or "").strip(),
             "notify": notify,
             "ambient_mcp": ambient_mcp,
+            "precheck": precheck,
+            "source_roots": source_roots,
             "updated": str(fm.get("updated", "") or ""),
             "body": (body or "").strip(),
         }
@@ -365,6 +380,11 @@ class LoopFeature:
         # Chỉ ghi ambient_mcp khi BẬT - giữ file loop mặc định sạch (fork không thấy cờ lạ).
         if loop.get("ambient_mcp"):
             fm["ambient_mcp"] = True
+        # precheck là opt-in hẹp cho Second Brain. Giữ source_roots kể cả [] để user có thể
+        # phân biệt "dùng roots chuẩn" với việc field bị mất do UI save/toggle.
+        if loop.get("precheck"):
+            fm["precheck"] = loop["precheck"]
+            fm["source_roots"] = list(loop.get("source_roots") or [])
         y = yaml.safe_dump(fm, allow_unicode=True, sort_keys=False, default_flow_style=False, width=1000).strip()
         d = self._loops_dir(brain)
         d.mkdir(parents=True, exist_ok=True)
@@ -895,7 +915,33 @@ class LoopFeature:
         else:
             cwd = vault_root
 
+        # Second Brain refresh: chạy deterministic precheck TRƯỚC _build_prompt/_make_cli.
+        # Không changed => cập nhật mốc scheduler rồi dừng, tuyệt đối không khởi động model.
+        precheck_context = ""
+        if reason == "scheduled" and loop.get("precheck") == "managed-markdown":
+            try:
+                scan = managed_markdown.scan_managed_notes(
+                    vault_root, loop.get("source_roots") or None)
+            except Exception as e:
+                summary = f"Managed Markdown precheck lỗi: {type(e).__name__}: {e}"
+                self._update_state(brain, slug, last_run=time.time(), last_summary=summary[:1000],
+                                   last_status="precheck-error")
+                return {"ok": False, "summary": summary, "precheck_error": True}
+            if not scan.get("changed_count"):
+                summary = "Không có managed Markdown thay đổi."
+                self._update_state(brain, slug, last_run=time.time(), last_summary=summary,
+                                   last_status="no-data")
+                return {"ok": True, "summary": summary, "precheck": scan, "ai_started": False}
+            paths = [str(item.get("path") or "").strip()
+                     for item in scan.get("changed", []) if str(item.get("path") or "").strip()]
+            precheck_context = (
+                "\n\nJAVIS_CHANGED_MANAGED_NOTES (canonical hash đã xác nhận changed; "
+                "chỉ xử lý các file này):\n" + "\n".join(f"- {p}" for p in paths)
+            )
+
         prompt, skip = await self._build_prompt(loop)
+        if precheck_context:
+            prompt += precheck_context
         if skip:
             self._log_append(brain, {"title": f"{slug} · loop ({goal}/{mode}) - {reason}", "body": skip})
             # KHÔNG ghi day (skip không tiêu quota ngày): ghi day mà không reset runs_today
@@ -1063,7 +1109,11 @@ class LoopFeature:
                 "slug": s, "name": name.strip() or s, "enabled": en, "goal": goal, "mode": mode,
                 "interval_min": iv, "workspace": ws, "tools_profile": tools_profile,
                 "quiet_hours": quiet_hours.strip(), "max_runs_per_day": mr,
-                "owner_chat": (oc or "").strip(), "notify": nf, "body": body,
+                "owner_chat": (oc or "").strip(), "notify": nf,
+                # UI không có field precheck/source_roots: sửa loop hiện có phải giữ nguyên chúng.
+                "precheck": old.get("precheck", "") if old else "",
+                "source_roots": list(old.get("source_roots", [])) if old else [],
+                "body": body,
             })
             self.register_brain(brain)
             return {"ok": True, "loop": self.loop_view(brain, loop)}
