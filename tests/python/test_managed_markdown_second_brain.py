@@ -8,6 +8,8 @@ These tests intentionally cover only the critical Gate behavior:
 - canonical hash ignores Javis bookkeeping but sees user edits;
 - scanning is restricted to managed Markdown/user roots and ignores system areas;
 - mark is path-safe and an immediate second scan is unchanged;
+- marking preserves the user Markdown body, including leading indentation;
+- malformed top frontmatter fails closed instead of being silently rewritten;
 - setup creates exactly one persistent refresh loop without overwriting user edits;
 - scheduled refresh with no changes returns BEFORE prompt/CLI/model construction (zero AI);
 - a real body edit reaches the AI path and injects only the changed note path.
@@ -19,6 +21,8 @@ import importlib.util
 import json
 import tempfile
 from pathlib import Path
+
+import yaml
 
 import managed_markdown
 from self_improve import LoopDeps, LoopFeature
@@ -45,6 +49,13 @@ def read_body(path):
     return body
 
 
+def render_with_body(fm, body):
+    rendered = yaml.safe_dump(
+        fm, allow_unicode=True, sort_keys=False, default_flow_style=False, width=1000
+    ).strip()
+    return f"---\n{rendered}\n---\n{body}"
+
+
 with tempfile.TemporaryDirectory(prefix="javis-managed-md-") as td:
     base = Path(td)
     vault = base / "Brain"
@@ -54,7 +65,8 @@ with tempfile.TemporaryDirectory(prefix="javis-managed-md-") as td:
     state.mkdir(parents=True)
 
     note = sources / "hoa-don.md"
-    original = "---\ntags:\n  - hoa-don\ncategory: accounting\n---\n\nNội dung gốc.\n"
+    # Leading blank line + indented code are intentional: mark must preserve them exactly.
+    original = "---\ntags:\n  - hoa-don\ncategory: accounting\n---\n\n    code block đầu note\nNội dung gốc.\n"
     note.write_text(original, encoding="utf-8")
     original_body = read_body(note)
 
@@ -62,6 +74,7 @@ with tempfile.TemporaryDirectory(prefix="javis-managed-md-") as td:
     marked = managed_markdown.mark_ingested(str(vault), "06 - Sources/Công việc/Kế toán/hoa-don.md")
     check("mark tra canonical sha256", len(marked.get("hash", "")) == 64)
     check("mark khong lam mat/thay body nguoi dung", read_body(note) == original_body)
+    check("mark giu nguyen indentation dau body", read_body(note).startswith("\n    code block đầu note"))
 
     scan = managed_markdown.scan_managed_notes(str(vault))
     check("scan ngay sau mark = unchanged", scan["changed_count"] == 0)
@@ -75,37 +88,46 @@ with tempfile.TemporaryDirectory(prefix="javis-managed-md-") as td:
     fm["processed_at"] = "2026-08-23T07:00:00+07:00"
     fm["wiki_links"] = ["Hoa don dien tu"]
     fm["javis_last_checked"] = "2026-08-23T07:15:00+07:00"
-    import yaml
-    rendered = yaml.safe_dump(fm, allow_unicode=True, sort_keys=False, default_flow_style=False, width=1000).strip()
-    note.write_text(f"---\n{rendered}\n---\n\n{body}", encoding="utf-8")
+    note.write_text(render_with_body(fm, body), encoding="utf-8")
     scan_ops = managed_markdown.scan_managed_notes(str(vault))
     check("chi metadata van hanh doi = unchanged", scan_ops["changed_count"] == 0)
 
     # ---- user semantic metadata DOES trigger ----
     fm2, body2, _ = managed_markdown._parse(note.read_text(encoding="utf-8"))
     fm2["tags"] = ["hoa-don", "ho-kinh-doanh"]
-    rendered2 = yaml.safe_dump(fm2, allow_unicode=True, sort_keys=False, default_flow_style=False, width=1000).strip()
-    note.write_text(f"---\n{rendered2}\n---\n\n{body2}", encoding="utf-8")
+    note.write_text(render_with_body(fm2, body2), encoding="utf-8")
     scan_tag = managed_markdown.scan_managed_notes(str(vault))
     check("user doi tags = changed", scan_tag["changed_count"] == 1)
 
     # mark again, then edit body
     managed_markdown.mark_ingested(str(vault), "06 - Sources/Công việc/Kế toán/hoa-don.md")
-    fm3, body3, _ = managed_markdown._parse(note.read_text(encoding="utf-8"))
-    note.write_text(note.read_text(encoding="utf-8").replace(body3, body3 + "Người dùng bổ sung từ Obsidian.\n"), encoding="utf-8")
+    _fm3, body3, _ = managed_markdown._parse(note.read_text(encoding="utf-8"))
+    note.write_text(
+        note.read_text(encoding="utf-8").replace(body3, body3 + "Người dùng bổ sung từ Obsidian.\n"),
+        encoding="utf-8",
+    )
     scan_body = managed_markdown.scan_managed_notes(str(vault))
     check("user doi body = changed", scan_body["changed_count"] == 1)
-    check("changed tra dung relative path", scan_body["changed"][0]["path"] == "06 - Sources/Công việc/Kế toán/hoa-don.md")
+    check(
+        "changed tra dung relative path",
+        scan_body["changed"][0]["path"] == "06 - Sources/Công việc/Kế toán/hoa-don.md",
+    )
 
     # ---- unmanaged and system areas are ignored ----
     unmanaged = sources / "chua-tieu-hoa.md"
     unmanaged.write_text("Chưa managed", encoding="utf-8")
     sys_note = vault / "06 - Sources" / "Javis" / "internal.md"
     sys_note.parent.mkdir(parents=True)
-    sys_note.write_text("---\njavis_managed: true\njavis_last_ingested_hash: bad\n---\ninternal", encoding="utf-8")
+    sys_note.write_text(
+        "---\njavis_managed: true\njavis_last_ingested_hash: bad\n---\ninternal",
+        encoding="utf-8",
+    )
     scan_scope = managed_markdown.scan_managed_notes(str(vault))
     changed_paths = {x["path"] for x in scan_scope["changed"]}
-    check("unmanaged markdown khong vao changed", "06 - Sources/Công việc/Kế toán/chua-tieu-hoa.md" not in changed_paths)
+    check(
+        "unmanaged markdown khong vao changed",
+        "06 - Sources/Công việc/Kế toán/chua-tieu-hoa.md" not in changed_paths,
+    )
     check("Javis/system subtree bi bo qua", "06 - Sources/Javis/internal.md" not in changed_paths)
 
     # ---- path traversal is refused ----
@@ -117,6 +139,20 @@ with tempfile.TemporaryDirectory(prefix="javis-managed-md-") as td:
     except ValueError:
         traversal_refused = True
     check("mark chan path traversal", traversal_refused)
+
+    # ---- malformed top frontmatter is fail-closed and untouched ----
+    malformed = sources / "malformed.md"
+    malformed_text = "---\ntags: [broken\n---\nNội dung phải còn nguyên.\n"
+    malformed.write_text(malformed_text, encoding="utf-8")
+    malformed_refused = False
+    try:
+        managed_markdown.mark_ingested(
+            str(vault), "06 - Sources/Công việc/Kế toán/malformed.md"
+        )
+    except ValueError:
+        malformed_refused = True
+    check("frontmatter malformed bi tu choi", malformed_refused)
+    check("frontmatter malformed khong bi sua", malformed.read_text(encoding="utf-8") == malformed_text)
 
     # ---- plugin setup: exactly one loop, preserve user edits, register brain ----
     plugin_path = ROOT / "system" / "plugins" / "managed-markdown" / "plugin.py"
@@ -135,18 +171,30 @@ with tempfile.TemporaryDirectory(prefix="javis-managed-md-") as td:
 
     ctx = FakeCtx()
     plugin.register(ctx)
-    check("plugin expose du 3 tools", set(ctx.tools) == {
-        "javis_managed_notes_scan", "javis_managed_notes_mark", "javis_managed_notes_setup"
-    })
+    check(
+        "plugin expose du 3 tools",
+        set(ctx.tools)
+        == {
+            "javis_managed_notes_scan",
+            "javis_managed_notes_mark",
+            "javis_managed_notes_setup",
+        },
+    )
     setup1 = json.loads(ctx.tools["javis_managed_notes_setup"]({}, ctx))
     loop_path = vault / "Javis" / "loops" / "second-brain-refresh.md"
     check("setup tao refresh loop lan dau", setup1["created"] is True and loop_path.is_file())
     loop_text = loop_path.read_text(encoding="utf-8")
-    check("refresh loop 15 phut + precheck deterministic", "interval_min: 15" in loop_text and "precheck: managed-markdown" in loop_text)
+    check(
+        "refresh loop 15 phut + precheck deterministic",
+        "interval_min: 15" in loop_text and "precheck: managed-markdown" in loop_text,
+    )
     custom_loop = loop_text.replace("interval_min: 15", "interval_min: 30") + "\nUSER CUSTOM\n"
     loop_path.write_text(custom_loop, encoding="utf-8")
     setup2 = json.loads(ctx.tools["javis_managed_notes_setup"]({}, ctx))
-    check("setup lan hai khong ghi de loop user", setup2["created"] is False and loop_path.read_text(encoding="utf-8") == custom_loop)
+    check(
+        "setup lan hai khong ghi de loop user",
+        setup2["created"] is False and loop_path.read_text(encoding="utf-8") == custom_loop,
+    )
     registry = json.loads((state / "loop_config.json").read_text(encoding="utf-8"))
     check("setup dang ky current Brain voi scheduler", str(vault.resolve()) in registry.get("brains", []))
 
@@ -165,7 +213,10 @@ with tempfile.TemporaryDirectory(prefix="javis-managed-md-") as td:
     )
     feature = LoopFeature(deps)
     lp = feature.get_loop("brain", "second-brain-refresh")
-    check("scheduler doc duoc precheck/source_roots", lp and lp["precheck"] == "managed-markdown" and lp["source_roots"] == [])
+    check(
+        "scheduler doc duoc precheck/source_roots",
+        lp and lp["precheck"] == "managed-markdown" and lp["source_roots"] == [],
+    )
 
     # Mark current user body so there is no change. If either method below runs, AI path was started.
     managed_markdown.mark_ingested(str(vault), "06 - Sources/Công việc/Kế toán/hoa-don.md")
@@ -174,10 +225,15 @@ with tempfile.TemporaryDirectory(prefix="javis-managed-md-") as td:
         raise AssertionError("_build_prompt must not run when precheck finds no changes")
 
     feature._build_prompt = forbidden_build
-    feature._make_cli = lambda *a, **k: (_ for _ in ()).throw(AssertionError("CLI/model must not be constructed"))
+    feature._make_cli = lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("CLI/model must not be constructed")
+    )
     no_change = asyncio.run(feature.run_cycle("brain", "second-brain-refresh", "scheduled"))
     check("scheduled no-change tra ai_started=False", no_change.get("ai_started") is False)
-    check("scheduled no-change khong tang runs_today", feature.read_state("brain").get("second-brain-refresh", {}).get("runs_today", 0) == 0)
+    check(
+        "scheduled no-change khong tang runs_today",
+        feature.read_state("brain").get("second-brain-refresh", {}).get("runs_today", 0) == 0,
+    )
 
     # ---- real edit reaches AI path and receives only deterministic changed list ----
     with note.open("a", encoding="utf-8") as fh:
@@ -206,7 +262,10 @@ with tempfile.TemporaryDirectory(prefix="javis-managed-md-") as td:
     changed_run = asyncio.run(feature.run_cycle("brain", "second-brain-refresh", "scheduled"))
     check("scheduled changed moi tao CLI/model path", captured["cli_made"] == 1)
     check("changed prompt co marker", "JAVIS_CHANGED_MANAGED_NOTES" in captured["prompt"])
-    check("changed prompt co dung note", "06 - Sources/Công việc/Kế toán/hoa-don.md" in captured["prompt"])
+    check(
+        "changed prompt co dung note",
+        "06 - Sources/Công việc/Kế toán/hoa-don.md" in captured["prompt"],
+    )
     check("changed run ket thuc hop le", changed_run.get("ok") is True)
 
 
