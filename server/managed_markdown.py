@@ -18,7 +18,10 @@ from typing import Any, Iterable, Optional
 
 import yaml
 
-_FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.DOTALL)
+# Consume only the YAML delimiter line itself. Do NOT use \s* after the closing `---`:
+# that would eat leading blank lines/indentation from the Markdown body (and could destroy
+# an indented code block at the very start of the note).
+_FM_RE = re.compile(r"^---[ \t]*\n(.*?)\n---[ \t]*(?:\n|$)(.*)$", re.DOTALL)
 
 # Metadata written by Javis during ingestion. These keys must not make a note look
 # changed merely because Javis recorded its own bookkeeping.
@@ -60,13 +63,18 @@ _DEFAULT_ROOT_CANDIDATES = (
 )
 
 
-def _parse(text: str) -> tuple[dict[str, Any], str, bool]:
-    """Return (frontmatter, body, had_frontmatter). Invalid YAML is treated as no FM.
+def _normalize_newlines(text: str) -> str:
+    return (text or "").replace("\r\n", "\n").replace("\r", "\n")
 
-    We intentionally do not try to rewrite malformed user frontmatter here. In that
-    case the entire file is hashed as user body so the guard remains fail-safe.
+
+def _parse(text: str) -> tuple[dict[str, Any], str, bool]:
+    """Return (frontmatter, body, had_frontmatter).
+
+    Invalid YAML is returned as ``had_frontmatter=False``. ``mark_ingested`` then fails
+    closed if the file starts with a YAML delimiter, so ambiguous/malformed user content is
+    never silently rewritten. Scanning simply treats such a file as unmanaged.
     """
-    normalized = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    normalized = _normalize_newlines(text)
     m = _FM_RE.match(normalized)
     if not m:
         return {}, normalized, False
@@ -223,8 +231,8 @@ def mark_ingested(vault_root: str, relative_path: str) -> dict[str, str]:
     """Persist javis_managed + canonical last-ingested hash after successful ingestion.
 
     The hash is computed *before* adding/updating operational keys; because those keys are
-    excluded from canonicalization, an immediate second scan is guaranteed to compare the
-    same semantic payload.
+    excluded from canonicalization, an immediate second scan compares the same semantic
+    payload. Markdown body is preserved exactly apart from newline normalization.
     """
     root = Path(vault_root).resolve()
     path = _safe_relative_root(root, relative_path)
@@ -234,11 +242,16 @@ def mark_ingested(vault_root: str, relative_path: str) -> dict[str, str]:
         raise ValueError("Từ chối quản lý Markdown trong vùng hệ thống")
 
     text = path.read_text(encoding="utf-8")
-    digest = canonical_hash_text(text)
-    fm, body, had_fm = _parse(text)
+    normalized = _normalize_newlines(text)
+    digest = canonical_hash_text(normalized)
+    fm, body, had_fm = _parse(normalized)
+    # A top-of-file delimiter that cannot be parsed is ambiguous: it might be malformed
+    # frontmatter or intentional Markdown. Never rewrite it silently; fail closed instead.
+    if not had_fm and normalized.startswith("---"):
+        raise ValueError("Frontmatter đầu file không hợp lệ; từ chối sửa để bảo toàn nội dung")
     if not had_fm:
         fm = {}
-        body = text.replace("\r\n", "\n").replace("\r", "\n")
+        body = normalized
 
     fm["javis_managed"] = True
     fm["javis_last_ingested_hash"] = digest
@@ -249,7 +262,9 @@ def mark_ingested(vault_root: str, relative_path: str) -> dict[str, str]:
         default_flow_style=False,
         width=1000,
     ).strip()
-    new_text = f"---\n{rendered}\n---\n\n{body}"
+    # Exactly one structural newline follows the closing delimiter; `body` itself is not
+    # stripped or prefixed, so leading blank lines / indentation remain untouched.
+    new_text = f"---\n{rendered}\n---\n{body}"
     _atomic_write(path, new_text)
     return {
         "path": path.relative_to(root).as_posix(),
