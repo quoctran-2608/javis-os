@@ -8,4 +8,5 @@ min_mode: readonly
 tools:
   - javis_managed_notes_scan
   - javis_managed_notes_mark
+  - javis_managed_notes_setup
 hooks: []
