@@ -1,4 +1,4 @@
-"""Regression contract for Gate 1 Second Brain source organization.
+"""Regression contract for Second Brain source organization.
 
 Chạy tay / CI:
 
@@ -6,7 +6,7 @@ Chạy tay / CI:
 
 Test này cố ý KHÔNG giả lập chất lượng semantic của model. Nó khoá những kỷ luật bắt buộc
 mà `ingest-source` phải mang theo: giữ nguyên body, một folder chính, reuse/create taxonomy,
-tag có kiểm soát, collision-safe move và re-ingest bảo thủ.
+tag có kiểm soát, collision-safe move, re-ingest bảo thủ và managed-Markdown refresh.
 """
 from _paths import ROOT  # noqa: E402
 import sys
@@ -69,11 +69,16 @@ def main():
     check("7. van dung wiki index", "`wiki/index.md`" in text)
     check("7b. van co citation cung", "Citation cứng" in text)
     check("7c. van ghi wiki links", "`wiki_links: [...]`" in text)
-    check("7d. processed gate van con", "`status: processed` -> DỪNG" in text)
+    check("7d. processed gate van con", "`status: processed` và đây là yêu cầu ingest bình thường -> DỪNG" in text)
 
-    # Guard against accidentally turning Gate 1 into Gate 2/Drive work.
-    check("8. gate1 chua dua hash guard vao skill", "javis_last_ingested_hash" not in low)
-    check("8b. gate1 chua dua drive persistence vao skill", "drive_file_id" not in low)
+    # 8. Managed Markdown refresh is now part of the completed Markdown capability.
+    check("8. hash guard duoc noi vao ingest",
+          "javis_last_ingested_hash" in low and "javis_managed_notes_mark" in low)
+    check("8b. setup refresh loop duoc noi vao ingest", "javis_managed_notes_setup" in low)
+    check("8c. changed refresh duoc phep reingest", "javis_changed_managed_notes" in low)
+
+    # Still guard against dragging later Drive work into this gate.
+    check("9. chua dua drive persistence vao skill", "drive_file_id" not in low)
 
     print()
     if _fails:
