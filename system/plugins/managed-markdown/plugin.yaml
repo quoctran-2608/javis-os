@@ -1,0 +1,11 @@
+name: Managed Markdown Guard
+slug: managed-markdown
+version: 1.0.0
+description: Canonical hash guard cho Second Brain Markdown; scan thay đổi không gọi AI và mark hash sau ingest thành công.
+author: Javis (bundled)
+enabled: true
+min_mode: readonly
+tools:
+  - javis_managed_notes_scan
+  - javis_managed_notes_mark
+hooks: []
